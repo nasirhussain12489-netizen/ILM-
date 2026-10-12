@@ -1,0 +1,2197 @@
+import express, { Request, Response } from 'express';
+import fs from 'fs';
+import path from 'path';
+import crypto from 'crypto';
+import * as dotenv from 'dotenv';
+import { and, asc, desc, eq } from 'drizzle-orm';
+import { createServer as createViteServer } from 'vite';
+import { db } from './src/db/index.ts';
+import {
+  activityLogs,
+  classOfficers,
+  classes,
+  competitionCategories,
+  feedPosts,
+  libraryResources,
+  participants,
+  platformSettings,
+  posters,
+  students,
+  users,
+  weeklyResults,
+} from './src/db/schema.ts';
+import {
+  CATEGORY_LIMITS,
+  CLASS_OFFICER_ROLES,
+  LIBRARY_CATEGORIES,
+  RESULT_CATEGORIES,
+  VALID_CATEGORIES,
+  VALID_CLASSES,
+  createParticipantWithPoster,
+  createSessionToken,
+  deleteParticipantWithPoster,
+  ensureInitialSeedData,
+  getUserByEmail,
+  hashPassword,
+  isValidClass,
+  logActivity,
+  regeneratePosterForClassCategory,
+  updateParticipantWithPoster,
+} from './src/db/repository.ts';
+import {
+  AuthRequest,
+  canAccessClass,
+  requireAuth,
+  requireSuperAdmin,
+} from './src/middleware/auth.ts';
+
+dotenv.config();
+
+const app = express();
+const PORT = 3000;
+
+app.use(express.json({ limit: '20mb' }));
+
+// Ensure uploads directory exists
+const uploadsDir = path.join(process.cwd(), 'uploads');
+if (!fs.existsSync(uploadsDir)) {
+  fs.mkdirSync(uploadsDir, { recursive: true });
+}
+
+// Serve generated scholar portraits from src/assets/images
+const generatedImagesDir = path.join(process.cwd(), 'src/assets/images');
+if (fs.existsSync(generatedImagesDir)) {
+  app.use(
+    '/assets/images',
+    express.static(generatedImagesDir, {
+      setHeaders: (res) => {
+        res.setHeader('X-Content-Type-Options', 'nosniff');
+        res.setHeader('Cache-Control', 'public, max-age=86400');
+      },
+    })
+  );
+}
+
+// Serve uploaded files safely with nosniff to prevent script execution
+app.use(
+  '/uploads',
+  express.static(uploadsDir, {
+    setHeaders: (res) => {
+      res.setHeader('X-Content-Type-Options', 'nosniff');
+      res.setHeader('Content-Security-Policy', "default-src 'none'");
+    },
+  })
+);
+
+// Simple in-memory rate limiter for authentication endpoints
+const loginAttempts = new Map<string, { count: number; resetAt: number }>();
+function checkRateLimit(ip: string): boolean {
+  const now = Date.now();
+  const record = loginAttempts.get(ip);
+  if (!record || now > record.resetAt) {
+    loginAttempts.set(ip, { count: 1, resetAt: now + 60_000 });
+    return true;
+  }
+  if (record.count >= 20) {
+    return false;
+  }
+  record.count += 1;
+  return true;
+}
+
+// ============================================================================
+// 1. PUBLIC WEBSITE ENDPOINTS (NO LOGIN REQUIRED, SANITIZED PUBLIC FIELDS)
+// ============================================================================
+app.get('/api/public/bootstrap', async (_req: Request, res: Response) => {
+  try {
+    await ensureInitialSeedData();
+
+    const [
+      allClasses,
+      allCategories,
+      allStudents,
+      allOfficers,
+      allParticipants,
+      allPosters,
+      allFeedPosts,
+      allResults,
+      allLibrary,
+      allSettings,
+    ] = await Promise.all([
+      db.select().from(classes).orderBy(asc(classes.code)),
+      db
+        .select()
+        .from(competitionCategories)
+        .orderBy(asc(competitionCategories.displayOrder)),
+      db
+        .select()
+        .from(students)
+        .orderBy(asc(students.classCode), asc(students.admissionNo)),
+      db
+        .select()
+        .from(classOfficers)
+        .orderBy(asc(classOfficers.classCode), asc(classOfficers.id)),
+      db
+        .select()
+        .from(participants)
+        .where(eq(participants.publicationStatus, 'PUBLISHED'))
+        .orderBy(asc(participants.classCode), asc(participants.id)),
+      db
+        .select()
+        .from(posters)
+        .where(eq(posters.publicationStatus, 'PUBLISHED'))
+        .orderBy(desc(posters.isFeatured), desc(posters.updatedAt), asc(posters.id)),
+      db
+        .select()
+        .from(feedPosts)
+        .where(eq(feedPosts.status, 'APPROVED'))
+        .orderBy(desc(feedPosts.createdAt)),
+      db
+        .select()
+        .from(weeklyResults)
+        .where(eq(weeklyResults.publicationStatus, 'PUBLISHED'))
+        .orderBy(desc(weeklyResults.resultDate), desc(weeklyResults.id)),
+      db
+        .select()
+        .from(libraryResources)
+        .where(eq(libraryResources.publicationStatus, 'PUBLISHED'))
+        .orderBy(desc(libraryResources.createdAt)),
+      db.select().from(platformSettings),
+    ]);
+
+    const publicParticipants = allParticipants.map((p) => ({
+      id: p.id,
+      admissionNo: p.admissionNo,
+      fullName: p.fullName,
+      photoUrl: p.photoUrl,
+      classCode: p.classCode,
+      categoryName: p.categoryName,
+      ownTopic: p.ownTopic,
+      shortDescription: p.shortDescription,
+    }));
+
+    // Sanitize public feed posts (no admin emails)
+    const publicFeed = allFeedPosts.map((fp) => ({
+      id: fp.id,
+      classCode: fp.classCode,
+      title: fp.title,
+      caption: fp.caption,
+      mediaUrl: fp.mediaUrl,
+      mediaType: fp.mediaType,
+      submittedByName: fp.submittedByName,
+      createdAt: fp.createdAt,
+    }));
+
+    // Sanitize public weekly results (no admin emails)
+    const publicResults = allResults.map((r) => ({
+      id: r.id,
+      resultCategory: r.resultCategory,
+      winnerName: r.winnerName,
+      winnerPhotoUrl: r.winnerPhotoUrl,
+      winnerClass: r.winnerClass,
+      weekLabel: r.weekLabel,
+      resultDate: r.resultDate,
+      remarks: r.remarks,
+      createdAt: r.createdAt,
+    }));
+
+    // Sanitize public library resources
+    const publicLibrary = allLibrary.map((lr) => ({
+      id: lr.id,
+      title: lr.title,
+      description: lr.description,
+      author: lr.author,
+      category: lr.category,
+      libraryScope: lr.libraryScope,
+      fileUrl: lr.fileUrl,
+      fileType: lr.fileType,
+      fileSize: lr.fileSize,
+      contentPreview: lr.contentPreview,
+      createdAt: lr.createdAt,
+    }));
+
+    const settingsMap: Record<string, string> = {};
+    for (const s of allSettings) {
+      settingsMap[s.settingKey] = s.settingValue;
+    }
+
+    res.json({
+      classes: allClasses.map((c) => ({
+        id: c.id,
+        code: c.code,
+        name: c.name,
+        description: c.description,
+      })),
+      categories: allCategories,
+      students: allStudents.map((s) => ({
+        id: s.id,
+        admissionNo: s.admissionNo,
+        fullName: s.fullName,
+        classCode: s.classCode,
+        photoUrl: s.photoUrl,
+        bio: s.bio,
+      })),
+      classOfficers: allOfficers.map((o) => ({
+        id: o.id,
+        classCode: o.classCode,
+        roleTitle: o.roleTitle,
+        holderName: o.holderName,
+        admissionNo: o.admissionNo,
+        photoUrl: o.photoUrl,
+        responsibilities: o.responsibilities,
+      })),
+      participants: publicParticipants,
+      posters: allPosters,
+      feedPosts: publicFeed,
+      weeklyResults: publicResults,
+      libraryResources: publicLibrary,
+      settings: settingsMap,
+    });
+  } catch (error: any) {
+    console.error('Error in /api/public/bootstrap:', error);
+    res
+      .status(500)
+      .json({ error: 'Failed to load public platform content. Please try again.' });
+  }
+});
+
+// ============================================================================
+// 2. ADMINISTRATOR AUTHENTICATION ENDPOINTS
+// ============================================================================
+app.post('/api/auth/login', async (req: Request, res: Response) => {
+  try {
+    const ip = req.ip || 'unknown';
+    if (!checkRateLimit(ip)) {
+      return res.status(429).json({
+        error: 'Too many login attempts. Please wait a minute before trying again.',
+      });
+    }
+
+    await ensureInitialSeedData();
+
+    const { email, password } = req.body || {};
+    if (!email || !password) {
+      return res
+        .status(400)
+        .json({ error: 'Administrator email and password are required.' });
+    }
+
+    const dbUser = await getUserByEmail(String(email));
+    if (!dbUser || !dbUser.passwordHash) {
+      return res
+        .status(401)
+        .json({ error: 'Invalid administrator email or password.' });
+    }
+
+    if (dbUser.status !== 'ACTIVE') {
+      return res.status(403).json({
+        error: 'This administrator account has been deactivated by the Super Admin.',
+      });
+    }
+
+    const incomingHash = hashPassword(String(password));
+    if (incomingHash !== dbUser.passwordHash) {
+      return res
+        .status(401)
+        .json({ error: 'Invalid administrator email or password.' });
+    }
+
+    const token = createSessionToken({
+      uid: dbUser.uid,
+      email: dbUser.email,
+      role: dbUser.role,
+      assignedClass: dbUser.assignedClass,
+    });
+
+    await logActivity({
+      actorEmail: dbUser.email,
+      actorRole: dbUser.role,
+      action: 'ADMIN_LOGIN',
+      targetType: 'AUTH',
+      classCode: dbUser.assignedClass || undefined,
+      details: `${dbUser.name} (${dbUser.role}) signed in to the administration portal.`,
+    });
+
+    return res.json({
+      token,
+      user: {
+        id: dbUser.id,
+        uid: dbUser.uid,
+        email: dbUser.email,
+        name: dbUser.name,
+        role: dbUser.role,
+        assignedClass: dbUser.assignedClass,
+        status: dbUser.status,
+      },
+    });
+  } catch (error: any) {
+    console.error('Login failed:', error);
+    return res.status(500).json({ error: 'Authentication service failed.' });
+  }
+});
+
+app.post('/api/auth/password-reset', async (req: Request, res: Response) => {
+  try {
+    const ip = req.ip || 'unknown';
+    if (!checkRateLimit(ip)) {
+      return res.status(429).json({ error: 'Too many requests. Please wait.' });
+    }
+
+    const { email, currentPassword, newPassword } = req.body || {};
+    if (!email || !currentPassword || !newPassword) {
+      return res.status(400).json({
+        error: 'Email, current password, and new password (min 8 chars) are required.',
+      });
+    }
+    if (String(newPassword).length < 8) {
+      return res
+        .status(400)
+        .json({ error: 'New password must be at least 8 characters long.' });
+    }
+
+    const dbUser = await getUserByEmail(String(email));
+    if (!dbUser || dbUser.passwordHash !== hashPassword(String(currentPassword))) {
+      return res
+        .status(401)
+        .json({ error: 'Invalid email or current password verification.' });
+    }
+
+    await db
+      .update(users)
+      .set({
+        passwordHash: hashPassword(String(newPassword)),
+        updatedAt: new Date(),
+      })
+      .where(eq(users.id, dbUser.id));
+
+    await logActivity({
+      actorEmail: dbUser.email,
+      actorRole: dbUser.role,
+      action: 'PASSWORD_RESET',
+      targetType: 'USER',
+      targetId: String(dbUser.id),
+      details: `Administrator ${dbUser.email} updated their account password.`,
+    });
+
+    return res.json({ message: 'Password updated successfully. You may now log in.' });
+  } catch (error) {
+    console.error('Password reset error:', error);
+    return res.status(500).json({ error: 'Failed to update password.' });
+  }
+});
+
+app.get('/api/auth/me', requireAuth, async (req: AuthRequest, res: Response) => {
+  return res.json({ user: req.adminUser });
+});
+
+// ============================================================================
+// 3. PROTECTED ADMIN DASHBOARD DATA ENDPOINT (STRICT CLASS ISOLATION)
+// ============================================================================
+app.get(
+  '/api/admin/dashboard',
+  requireAuth,
+  async (req: AuthRequest, res: Response) => {
+    try {
+      await ensureInitialSeedData();
+      const admin = req.adminUser!;
+
+      const allCategories = await db
+        .select()
+        .from(competitionCategories)
+        .orderBy(asc(competitionCategories.displayOrder));
+
+      const allResults = await db
+        .select()
+        .from(weeklyResults)
+        .orderBy(desc(weeklyResults.resultDate), desc(weeklyResults.id));
+
+      if (admin.role === 'SUPER_ADMIN') {
+        const [
+          allClasses,
+          allStudents,
+          allOfficers,
+          allParticipants,
+          allPosters,
+          allFeed,
+          allLibrary,
+          allUsers,
+          allLogs,
+          allSettings,
+        ] = await Promise.all([
+          db.select().from(classes).orderBy(asc(classes.code)),
+          db
+            .select()
+            .from(students)
+            .orderBy(asc(students.classCode), asc(students.admissionNo)),
+          db
+            .select()
+            .from(classOfficers)
+            .orderBy(asc(classOfficers.classCode), asc(classOfficers.id)),
+          db
+            .select()
+            .from(participants)
+            .orderBy(asc(participants.classCode), desc(participants.id)),
+          db
+            .select()
+            .from(posters)
+            .orderBy(asc(posters.classCode), desc(posters.updatedAt)),
+          db.select().from(feedPosts).orderBy(desc(feedPosts.createdAt)),
+          db
+            .select()
+            .from(libraryResources)
+            .orderBy(desc(libraryResources.createdAt)),
+          db.select().from(users).orderBy(asc(users.role), asc(users.assignedClass)),
+          db
+            .select()
+            .from(activityLogs)
+            .orderBy(desc(activityLogs.createdAt))
+            .limit(100),
+          db.select().from(platformSettings),
+        ]);
+
+        const settingsMap: Record<string, string> = {};
+        for (const s of allSettings) {
+          settingsMap[s.settingKey] = s.settingValue;
+        }
+
+        return res.json({
+          user: admin,
+          classes: allClasses,
+          categories: allCategories,
+          students: allStudents,
+          classOfficers: allOfficers,
+          participants: allParticipants,
+          posters: allPosters,
+          feedPosts: allFeed,
+          weeklyResults: allResults,
+          libraryResources: allLibrary,
+          users: allUsers.map((u) => ({
+            id: u.id,
+            uid: u.uid,
+            email: u.email,
+            name: u.name,
+            role: u.role,
+            assignedClass: u.assignedClass,
+            status: u.status,
+            createdAt: u.createdAt,
+            updatedAt: u.updatedAt,
+          })),
+          activityLogs: allLogs,
+          settings: settingsMap,
+        });
+      }
+
+      // CLASS_ADMIN: Strictly isolate all data to admin.assignedClass
+      const assignedClass = admin.assignedClass;
+      if (!assignedClass || !isValidClass(assignedClass)) {
+        return res.status(403).json({
+          error: 'Class Admin account does not have a valid assigned class (U1–U6).',
+        });
+      }
+
+      const [
+        assignedClassRows,
+        classStudents,
+        classOfficersRows,
+        classParticipants,
+        classPosters,
+        classFeed,
+        classLibrary,
+        classLogs,
+      ] = await Promise.all([
+        db.select().from(classes).where(eq(classes.code, assignedClass)),
+        db
+          .select()
+          .from(students)
+          .where(eq(students.classCode, assignedClass))
+          .orderBy(asc(students.admissionNo)),
+        db
+          .select()
+          .from(classOfficers)
+          .where(eq(classOfficers.classCode, assignedClass))
+          .orderBy(asc(classOfficers.id)),
+        db
+          .select()
+          .from(participants)
+          .where(eq(participants.classCode, assignedClass))
+          .orderBy(desc(participants.id)),
+        db
+          .select()
+          .from(posters)
+          .where(eq(posters.classCode, assignedClass))
+          .orderBy(desc(posters.updatedAt)),
+        db
+          .select()
+          .from(feedPosts)
+          .where(eq(feedPosts.classCode, assignedClass))
+          .orderBy(desc(feedPosts.createdAt)),
+        db
+          .select()
+          .from(libraryResources)
+          .where(eq(libraryResources.libraryScope, assignedClass))
+          .orderBy(desc(libraryResources.createdAt)),
+        db
+          .select()
+          .from(activityLogs)
+          .where(eq(activityLogs.classCode, assignedClass))
+          .orderBy(desc(activityLogs.createdAt))
+          .limit(50),
+      ]);
+
+      return res.json({
+        user: admin,
+        classes: assignedClassRows,
+        categories: allCategories,
+        students: classStudents,
+        classOfficers: classOfficersRows,
+        participants: classParticipants,
+        posters: classPosters,
+        feedPosts: classFeed,
+        weeklyResults: allResults.filter(
+          (r) => r.publicationStatus === 'PUBLISHED'
+        ),
+        libraryResources: classLibrary,
+        users: [],
+        activityLogs: classLogs,
+        settings: {},
+      });
+    } catch (error: any) {
+      console.error('Error loading admin dashboard:', error);
+      return res
+        .status(500)
+        .json({ error: 'Failed to load administrator dashboard data.' });
+    }
+  }
+);
+
+// ============================================================================
+// 4. PARTICIPANT MANAGEMENT & AUTOMATIC POSTER GENERATION
+// ============================================================================
+app.post(
+  '/api/admin/participants',
+  requireAuth,
+  async (req: AuthRequest, res: Response) => {
+    try {
+      const admin = req.adminUser!;
+      const {
+        admissionNo,
+        fullName,
+        photoUrl,
+        classCode,
+        categoryName,
+        ownTopic,
+        shortDescription,
+        publicationStatus,
+      } = req.body || {};
+
+      const targetClass =
+        admin.role === 'CLASS_ADMIN' ? admin.assignedClass! : String(classCode || '');
+
+      if (
+        admin.role === 'CLASS_ADMIN' &&
+        classCode &&
+        classCode !== admin.assignedClass
+      ) {
+        return res.status(403).json({
+          error: `Forbidden: Class Admin for ${admin.assignedClass} cannot add participants to class ${classCode}.`,
+        });
+      }
+
+      if (!canAccessClass(admin, targetClass)) {
+        return res.status(403).json({
+          error: 'Forbidden: You do not have permission to manage this class.',
+        });
+      }
+
+      const result = await createParticipantWithPoster({
+        admissionNo: admissionNo ? String(admissionNo) : undefined,
+        fullName: String(fullName || ''),
+        photoUrl: String(photoUrl || ''),
+        classCode: targetClass,
+        categoryName: String(categoryName || ''),
+        ownTopic: ownTopic ? String(ownTopic) : undefined,
+        shortDescription: shortDescription ? String(shortDescription) : undefined,
+        publicationStatus: publicationStatus || 'PUBLISHED',
+        actorEmail: admin.email,
+        actorRole: admin.role,
+      });
+
+      return res.status(201).json(result);
+    } catch (error: any) {
+      return res.status(400).json({
+        error: error.message || 'Failed to register participant.',
+      });
+    }
+  }
+);
+
+app.put(
+  '/api/admin/participants/:id',
+  requireAuth,
+  async (req: AuthRequest, res: Response) => {
+    try {
+      const admin = req.adminUser!;
+      const participantId = Number(req.params.id);
+      if (!participantId) {
+        return res.status(400).json({ error: 'Valid participant ID is required.' });
+      }
+
+      const existingRows = await db
+        .select()
+        .from(participants)
+        .where(eq(participants.id, participantId));
+
+      if (existingRows.length === 0) {
+        return res.status(404).json({ error: 'Participant not found.' });
+      }
+
+      const existing = existingRows[0];
+      if (!canAccessClass(admin, existing.classCode)) {
+        return res.status(403).json({
+          error: `Forbidden: You cannot modify participants in class ${existing.classCode}.`,
+        });
+      }
+
+      const {
+        admissionNo,
+        fullName,
+        photoUrl,
+        classCode,
+        categoryName,
+        ownTopic,
+        shortDescription,
+        publicationStatus,
+      } = req.body || {};
+
+      if (classCode && !canAccessClass(admin, String(classCode))) {
+        return res.status(403).json({
+          error: `Forbidden: You cannot transfer participants to class ${classCode}.`,
+        });
+      }
+
+      const result = await updateParticipantWithPoster({
+        id: participantId,
+        admissionNo,
+        fullName,
+        photoUrl,
+        classCode,
+        categoryName,
+        ownTopic,
+        shortDescription,
+        publicationStatus,
+        actorEmail: admin.email,
+        actorRole: admin.role,
+      });
+
+      return res.json(result);
+    } catch (error: any) {
+      return res
+        .status(400)
+        .json({ error: error.message || 'Failed to update participant.' });
+    }
+  }
+);
+
+app.delete(
+  '/api/admin/participants/:id',
+  requireAuth,
+  async (req: AuthRequest, res: Response) => {
+    try {
+      const admin = req.adminUser!;
+      const participantId = Number(req.params.id);
+      if (!participantId) {
+        return res.status(400).json({ error: 'Valid participant ID is required.' });
+      }
+
+      const existingRows = await db
+        .select()
+        .from(participants)
+        .where(eq(participants.id, participantId));
+
+      if (existingRows.length === 0) {
+        return res.status(404).json({ error: 'Participant not found.' });
+      }
+
+      const existing = existingRows[0];
+      if (!canAccessClass(admin, existing.classCode)) {
+        return res.status(403).json({
+          error: `Forbidden: You cannot remove participants from class ${existing.classCode}.`,
+        });
+      }
+
+      const result = await deleteParticipantWithPoster({
+        id: participantId,
+        actorEmail: admin.email,
+        actorRole: admin.role,
+      });
+
+      return res.json(result);
+    } catch (error: any) {
+      return res
+        .status(400)
+        .json({ error: error.message || 'Failed to delete participant.' });
+    }
+  }
+);
+
+// ============================================================================
+// 4B. STUDENTS ROSTER ENDPOINTS (ADMISSION NO + NAME + CLASS ISOLATION)
+// ============================================================================
+app.post(
+  '/api/admin/students',
+  requireAuth,
+  async (req: AuthRequest, res: Response) => {
+    try {
+      const admin = req.adminUser!;
+      const { admissionNo, fullName, classCode, photoUrl, bio } = req.body || {};
+
+      const targetClass =
+        admin.role === 'CLASS_ADMIN'
+          ? admin.assignedClass!
+          : String(classCode || '');
+
+      if (
+        admin.role === 'CLASS_ADMIN' &&
+        classCode &&
+        classCode !== admin.assignedClass
+      ) {
+        return res.status(403).json({
+          error: `Forbidden: Class Admin for ${admin.assignedClass} can only add students to ${admin.assignedClass}.`,
+        });
+      }
+
+      if (!isValidClass(targetClass)) {
+        return res
+          .status(400)
+          .json({ error: 'Valid class (U1–U6) is required for student registration.' });
+      }
+      if (!admissionNo || !String(admissionNo).trim()) {
+        return res
+          .status(400)
+          .json({ error: 'Student Admission Number is required.' });
+      }
+      if (!fullName || !String(fullName).trim()) {
+        return res
+          .status(400)
+          .json({ error: 'Student full name is required.' });
+      }
+
+      const cleanAdm = String(admissionNo).trim();
+      const existingAdm = await db
+        .select()
+        .from(students)
+        .where(eq(students.admissionNo, cleanAdm));
+
+      if (existingAdm.length > 0) {
+        return res.status(400).json({
+          error: `A student with Admission No "${cleanAdm}" is already registered (${existingAdm[0].fullName} in ${existingAdm[0].classCode}).`,
+        });
+      }
+
+      const inserted = await db
+        .insert(students)
+        .values({
+          admissionNo: cleanAdm,
+          fullName: String(fullName).trim(),
+          classCode: targetClass,
+          photoUrl:
+            photoUrl && String(photoUrl).trim()
+              ? String(photoUrl).trim()
+              : '/assets/images/scholar_portrait_ahmed_1791787523001.jpg',
+          bio: bio ? String(bio).trim() : null,
+          createdByEmail: admin.email,
+        })
+        .returning();
+
+      await logActivity({
+        actorEmail: admin.email,
+        actorRole: admin.role,
+        action: 'ADD_STUDENT',
+        targetType: 'STUDENT',
+        targetId: String(inserted[0].id),
+        classCode: targetClass,
+        details: `Added student ${inserted[0].fullName} (Admission No: ${inserted[0].admissionNo}) to Class ${targetClass}.`,
+      });
+
+      return res.status(201).json({ student: inserted[0] });
+    } catch (error: any) {
+      return res
+        .status(400)
+        .json({ error: error.message || 'Failed to register student.' });
+    }
+  }
+);
+
+app.put(
+  '/api/admin/students/:id',
+  requireAuth,
+  async (req: AuthRequest, res: Response) => {
+    try {
+      const admin = req.adminUser!;
+      const studentId = Number(req.params.id);
+      const existingRows = await db
+        .select()
+        .from(students)
+        .where(eq(students.id, studentId));
+
+      if (existingRows.length === 0) {
+        return res.status(404).json({ error: 'Student record not found.' });
+      }
+      const existing = existingRows[0];
+
+      if (!canAccessClass(admin, existing.classCode)) {
+        return res.status(403).json({
+          error: `Forbidden: You cannot edit students in Class ${existing.classCode}.`,
+        });
+      }
+
+      const { admissionNo, fullName, classCode, photoUrl, bio } = req.body || {};
+      const targetClass =
+        admin.role === 'CLASS_ADMIN'
+          ? admin.assignedClass!
+          : String(classCode || existing.classCode);
+
+      if (!isValidClass(targetClass)) {
+        return res.status(400).json({ error: 'Valid class (U1–U6) is required.' });
+      }
+
+      const updated = await db
+        .update(students)
+        .set({
+          admissionNo: admissionNo
+            ? String(admissionNo).trim()
+            : existing.admissionNo,
+          fullName: fullName ? String(fullName).trim() : existing.fullName,
+          classCode: targetClass,
+          photoUrl: photoUrl ? String(photoUrl).trim() : existing.photoUrl,
+          bio: bio !== undefined ? (bio ? String(bio).trim() : null) : existing.bio,
+          updatedAt: new Date(),
+        })
+        .where(eq(students.id, studentId))
+        .returning();
+
+      await logActivity({
+        actorEmail: admin.email,
+        actorRole: admin.role,
+        action: 'UPDATE_STUDENT',
+        targetType: 'STUDENT',
+        targetId: String(studentId),
+        classCode: targetClass,
+        details: `Updated student ${updated[0].fullName} (Admission No: ${updated[0].admissionNo}) in Class ${targetClass}.`,
+      });
+
+      return res.json({ student: updated[0] });
+    } catch (error: any) {
+      return res
+        .status(400)
+        .json({ error: error.message || 'Failed to update student.' });
+    }
+  }
+);
+
+app.delete(
+  '/api/admin/students/:id',
+  requireAuth,
+  async (req: AuthRequest, res: Response) => {
+    try {
+      const admin = req.adminUser!;
+      const studentId = Number(req.params.id);
+      const existingRows = await db
+        .select()
+        .from(students)
+        .where(eq(students.id, studentId));
+
+      if (existingRows.length === 0) {
+        return res.status(404).json({ error: 'Student record not found.' });
+      }
+      const existing = existingRows[0];
+
+      if (!canAccessClass(admin, existing.classCode)) {
+        return res.status(403).json({
+          error: `Forbidden: You cannot remove students from Class ${existing.classCode}.`,
+        });
+      }
+
+      await db.delete(students).where(eq(students.id, studentId));
+
+      await logActivity({
+        actorEmail: admin.email,
+        actorRole: admin.role,
+        action: 'DELETE_STUDENT',
+        targetType: 'STUDENT',
+        targetId: String(studentId),
+        classCode: existing.classCode,
+        details: `Removed student ${existing.fullName} (${existing.admissionNo}) from Class ${existing.classCode}.`,
+      });
+
+      return res.json({ deletedId: studentId });
+    } catch (error: any) {
+      return res
+        .status(400)
+        .json({ error: error.message || 'Failed to delete student.' });
+    }
+  }
+);
+
+// ============================================================================
+// 4C. CLASS OFFICERS ENDPOINTS (STRICTLY SUPER ADMIN ONLY FOR ADD / EDIT / DELETE)
+// ============================================================================
+app.post(
+  '/api/admin/class-officers',
+  requireAuth,
+  requireSuperAdmin,
+  async (req: AuthRequest, res: Response) => {
+    try {
+      const superAdmin = req.adminUser!;
+      const {
+        classCode,
+        roleTitle,
+        holderName,
+        admissionNo,
+        photoUrl,
+        responsibilities,
+      } = req.body || {};
+
+      if (!isValidClass(String(classCode || ''))) {
+        return res.status(400).json({
+          error: 'Valid class (U1–U6) is required for Class Officer assignment.',
+        });
+      }
+
+      if (
+        !CLASS_OFFICER_ROLES.includes(
+          roleTitle as (typeof CLASS_OFFICER_ROLES)[number]
+        )
+      ) {
+        return res.status(400).json({
+          error: `Invalid officer role. Allowed roles: ${CLASS_OFFICER_ROLES.join(
+            ', '
+          )}.`,
+        });
+      }
+
+      if (!holderName || !String(holderName).trim()) {
+        return res
+          .status(400)
+          .json({ error: 'Officer holder full name is required.' });
+      }
+
+      const existingOfficer = await db
+        .select()
+        .from(classOfficers)
+        .where(
+          and(
+            eq(classOfficers.classCode, String(classCode)),
+            eq(classOfficers.roleTitle, String(roleTitle))
+          )
+        );
+
+      let savedOfficer;
+      if (existingOfficer.length > 0) {
+        const updated = await db
+          .update(classOfficers)
+          .set({
+            holderName: String(holderName).trim(),
+            admissionNo: admissionNo ? String(admissionNo).trim() : null,
+            photoUrl:
+              photoUrl && String(photoUrl).trim()
+                ? String(photoUrl).trim()
+                : existingOfficer[0].photoUrl,
+            responsibilities: responsibilities
+              ? String(responsibilities).trim()
+              : null,
+            updatedByEmail: superAdmin.email,
+            updatedAt: new Date(),
+          })
+          .where(eq(classOfficers.id, existingOfficer[0].id))
+          .returning();
+        savedOfficer = updated[0];
+      } else {
+        const inserted = await db
+          .insert(classOfficers)
+          .values({
+            classCode: String(classCode),
+            roleTitle: String(roleTitle),
+            holderName: String(holderName).trim(),
+            admissionNo: admissionNo ? String(admissionNo).trim() : null,
+            photoUrl:
+              photoUrl && String(photoUrl).trim()
+                ? String(photoUrl).trim()
+                : '/assets/images/scholar_portrait_ahmed_1791787523001.jpg',
+            responsibilities: responsibilities
+              ? String(responsibilities).trim()
+              : null,
+            updatedByEmail: superAdmin.email,
+          })
+          .returning();
+        savedOfficer = inserted[0];
+      }
+
+      await logActivity({
+        actorEmail: superAdmin.email,
+        actorRole: superAdmin.role,
+        action:
+          existingOfficer.length > 0
+            ? 'UPDATE_CLASS_OFFICER'
+            : 'ASSIGN_CLASS_OFFICER',
+        targetType: 'CLASS_OFFICER',
+        targetId: String(savedOfficer.id),
+        classCode: String(classCode),
+        details: `Super Admin appointed ${savedOfficer.holderName} as ${savedOfficer.roleTitle} for Class ${classCode}.`,
+      });
+
+      return res.status(201).json({ officer: savedOfficer });
+    } catch (error: any) {
+      return res
+        .status(400)
+        .json({ error: error.message || 'Failed to save Class Officer.' });
+    }
+  }
+);
+
+app.delete(
+  '/api/admin/class-officers/:id',
+  requireAuth,
+  requireSuperAdmin,
+  async (req: AuthRequest, res: Response) => {
+    try {
+      const superAdmin = req.adminUser!;
+      const officerId = Number(req.params.id);
+      const existingRows = await db
+        .select()
+        .from(classOfficers)
+        .where(eq(classOfficers.id, officerId));
+
+      if (existingRows.length === 0) {
+        return res.status(404).json({ error: 'Class Officer record not found.' });
+      }
+      const existing = existingRows[0];
+
+      await db.delete(classOfficers).where(eq(classOfficers.id, officerId));
+
+      await logActivity({
+        actorEmail: superAdmin.email,
+        actorRole: superAdmin.role,
+        action: 'REMOVE_CLASS_OFFICER',
+        targetType: 'CLASS_OFFICER',
+        targetId: String(officerId),
+        classCode: existing.classCode,
+        details: `Super Admin removed ${existing.holderName} (${existing.roleTitle}) from Class ${existing.classCode}.`,
+      });
+
+      return res.json({ deletedId: officerId });
+    } catch (error: any) {
+      return res
+        .status(400)
+        .json({ error: error.message || 'Failed to remove Class Officer.' });
+    }
+  }
+);
+
+// ============================================================================
+// 5. POSTERS MANAGEMENT ENDPOINTS
+// ============================================================================
+app.post(
+  '/api/admin/posters/regenerate',
+  requireAuth,
+  async (req: AuthRequest, res: Response) => {
+    try {
+      const admin = req.adminUser!;
+      const { classCode, categoryName } = req.body || {};
+      const targetClass =
+        admin.role === 'CLASS_ADMIN' ? admin.assignedClass! : String(classCode || '');
+
+      if (!canAccessClass(admin, targetClass)) {
+        return res.status(403).json({
+          error: 'Forbidden: You cannot regenerate posters for another class.',
+        });
+      }
+
+      const poster = await regeneratePosterForClassCategory(
+        targetClass,
+        String(categoryName || 'All Categories')
+      );
+
+      await logActivity({
+        actorEmail: admin.email,
+        actorRole: admin.role,
+        action: 'REGENERATE_POSTER',
+        targetType: 'POSTER',
+        targetId: String(poster.id),
+        classCode: targetClass,
+        details: `Regenerated unified 1-page Master Class Poster for Class ${targetClass}.`,
+      });
+
+      return res.json({ poster });
+    } catch (error: any) {
+      return res
+        .status(400)
+        .json({ error: error.message || 'Failed to regenerate poster.' });
+    }
+  }
+);
+
+app.patch(
+  '/api/admin/posters/:id',
+  requireAuth,
+  async (req: AuthRequest, res: Response) => {
+    try {
+      const admin = req.adminUser!;
+      const posterId = Number(req.params.id);
+      const existingRows = await db
+        .select()
+        .from(posters)
+        .where(eq(posters.id, posterId));
+
+      if (existingRows.length === 0) {
+        return res.status(404).json({ error: 'Poster not found.' });
+      }
+      const existing = existingRows[0];
+
+      if (!canAccessClass(admin, existing.classCode)) {
+        return res.status(403).json({
+          error: `Forbidden: You cannot modify posters for class ${existing.classCode}.`,
+        });
+      }
+
+      const {
+        publicationStatus,
+        isFeatured,
+        title,
+        subtitle,
+        posterImageUrl,
+        participantsSnapshot,
+      } = req.body || {};
+
+      const updated = await db
+        .update(posters)
+        .set({
+          publicationStatus: publicationStatus ?? existing.publicationStatus,
+          isFeatured:
+            typeof isFeatured === 'boolean' ? isFeatured : existing.isFeatured,
+          title: title ? String(title).trim() : existing.title,
+          subtitle: subtitle ? String(subtitle).trim() : existing.subtitle,
+          posterImageUrl: posterImageUrl
+            ? String(posterImageUrl)
+            : existing.posterImageUrl,
+          participantsSnapshot: participantsSnapshot
+            ? String(participantsSnapshot)
+            : existing.participantsSnapshot,
+          updatedAt: new Date(),
+        })
+        .where(eq(posters.id, posterId))
+        .returning();
+
+      await logActivity({
+        actorEmail: admin.email,
+        actorRole: admin.role,
+        action: posterImageUrl ? 'EDIT_POSTER_STUDIO' : 'UPDATE_POSTER_STATUS',
+        targetType: 'POSTER',
+        targetId: String(posterId),
+        classCode: existing.classCode,
+        details: posterImageUrl
+          ? `Customized and saved poster "${updated[0].title}" in Pro Poster Studio.`
+          : `Updated poster "${updated[0].title}" (Status: ${updated[0].publicationStatus}).`,
+      });
+
+      return res.json({ poster: updated[0] });
+    } catch (error: any) {
+      return res
+        .status(400)
+        .json({ error: error.message || 'Failed to update poster.' });
+    }
+  }
+);
+
+// ============================================================================
+// 6. CLASS FEED & SUPER ADMIN CONTENT MODERATION ENDPOINTS
+// ============================================================================
+app.post(
+  '/api/admin/feed',
+  requireAuth,
+  async (req: AuthRequest, res: Response) => {
+    try {
+      const admin = req.adminUser!;
+      const { classCode, title, caption, mediaUrl, mediaType } = req.body || {};
+
+      const targetClass =
+        admin.role === 'CLASS_ADMIN' ? admin.assignedClass! : String(classCode || '');
+
+      if (
+        admin.role === 'CLASS_ADMIN' &&
+        classCode &&
+        classCode !== admin.assignedClass
+      ) {
+        return res.status(403).json({
+          error: `Forbidden: You can only submit feed posts for your assigned class (${admin.assignedClass}).`,
+        });
+      }
+
+      if (!isValidClass(targetClass)) {
+        return res
+          .status(400)
+          .json({ error: 'Valid class (U1–U6) is required for feed posts.' });
+      }
+      if (!title || !caption || !mediaUrl) {
+        return res
+          .status(400)
+          .json({ error: 'Title, caption, and photo/poster media are required.' });
+      }
+
+      // Class Admin submissions MUST ALWAYS start as PENDING review
+      const initialStatus =
+        admin.role === 'SUPER_ADMIN' ? 'APPROVED' : 'PENDING';
+
+      const inserted = await db
+        .insert(feedPosts)
+        .values({
+          classCode: targetClass,
+          title: String(title).trim(),
+          caption: String(caption).trim(),
+          mediaUrl: String(mediaUrl).trim(),
+          mediaType: mediaType || 'PHOTO',
+          status: initialStatus,
+          submittedByEmail: admin.email,
+          submittedByName: admin.name,
+          reviewedByEmail: admin.role === 'SUPER_ADMIN' ? admin.email : null,
+          reviewedAt: admin.role === 'SUPER_ADMIN' ? new Date() : null,
+        })
+        .returning();
+
+      await logActivity({
+        actorEmail: admin.email,
+        actorRole: admin.role,
+        action:
+          initialStatus === 'APPROVED'
+            ? 'PUBLISH_FEED_POST'
+            : 'SUBMIT_FEED_POST_FOR_APPROVAL',
+        targetType: 'FEED_POST',
+        targetId: String(inserted[0].id),
+        classCode: targetClass,
+        details: `${admin.name} submitted feed post "${inserted[0].title}" for ${targetClass} (Status: ${initialStatus}).`,
+      });
+
+      return res.status(201).json({ post: inserted[0] });
+    } catch (error: any) {
+      return res
+        .status(400)
+        .json({ error: error.message || 'Failed to submit feed post.' });
+    }
+  }
+);
+
+app.put(
+  '/api/admin/feed/:id',
+  requireAuth,
+  async (req: AuthRequest, res: Response) => {
+    try {
+      const admin = req.adminUser!;
+      const postId = Number(req.params.id);
+      const existingRows = await db
+        .select()
+        .from(feedPosts)
+        .where(eq(feedPosts.id, postId));
+
+      if (existingRows.length === 0) {
+        return res.status(404).json({ error: 'Feed post not found.' });
+      }
+      const existing = existingRows[0];
+
+      if (!canAccessClass(admin, existing.classCode)) {
+        return res.status(403).json({
+          error: 'Forbidden: You cannot edit feed submissions from another class.',
+        });
+      }
+
+      const { title, caption, mediaUrl, mediaType } = req.body || {};
+
+      // When a Class Admin edits/resubmits a post, it returns to PENDING for Super Admin review
+      const nextStatus =
+        admin.role === 'CLASS_ADMIN' ? 'PENDING' : existing.status;
+
+      const updated = await db
+        .update(feedPosts)
+        .set({
+          title: title ? String(title).trim() : existing.title,
+          caption: caption ? String(caption).trim() : existing.caption,
+          mediaUrl: mediaUrl ? String(mediaUrl).trim() : existing.mediaUrl,
+          mediaType: mediaType || existing.mediaType,
+          status: nextStatus,
+          rejectionReason:
+            admin.role === 'CLASS_ADMIN' ? null : existing.rejectionReason,
+          updatedAt: new Date(),
+        })
+        .where(eq(feedPosts.id, postId))
+        .returning();
+
+      await logActivity({
+        actorEmail: admin.email,
+        actorRole: admin.role,
+        action: 'UPDATE_RESUBMIT_FEED_POST',
+        targetType: 'FEED_POST',
+        targetId: String(postId),
+        classCode: existing.classCode,
+        details: `Updated feed post "${updated[0].title}" (Status: ${nextStatus}).`,
+      });
+
+      return res.json({ post: updated[0] });
+    } catch (error: any) {
+      return res
+        .status(400)
+        .json({ error: error.message || 'Failed to update feed post.' });
+    }
+  }
+);
+
+app.post(
+  '/api/admin/feed/:id/moderate',
+  requireAuth,
+  requireSuperAdmin,
+  async (req: AuthRequest, res: Response) => {
+    try {
+      const admin = req.adminUser!;
+      const postId = Number(req.params.id);
+      const { decision, rejectionReason } = req.body || {};
+
+      if (decision !== 'APPROVED' && decision !== 'REJECTED') {
+        return res.status(400).json({
+          error: "Moderation decision must be either 'APPROVED' or 'REJECTED'.",
+        });
+      }
+
+      const existingRows = await db
+        .select()
+        .from(feedPosts)
+        .where(eq(feedPosts.id, postId));
+      if (existingRows.length === 0) {
+        return res.status(404).json({ error: 'Feed submission not found.' });
+      }
+
+      const updated = await db
+        .update(feedPosts)
+        .set({
+          status: decision,
+          rejectionReason:
+            decision === 'REJECTED'
+              ? String(rejectionReason || 'Requires revision before public publication.').trim()
+              : null,
+          reviewedByEmail: admin.email,
+          reviewedAt: new Date(),
+          updatedAt: new Date(),
+        })
+        .where(eq(feedPosts.id, postId))
+        .returning();
+
+      await logActivity({
+        actorEmail: admin.email,
+        actorRole: admin.role,
+        action: `MODERATE_FEED_${decision}`,
+        targetType: 'FEED_POST',
+        targetId: String(postId),
+        classCode: updated[0].classCode,
+        details: `Super Admin ${decision.toLowerCase()} feed post "${updated[0].title}" (${updated[0].classCode}).`,
+      });
+
+      return res.json({ post: updated[0] });
+    } catch (error: any) {
+      return res
+        .status(400)
+        .json({ error: error.message || 'Moderation operation failed.' });
+    }
+  }
+);
+
+app.delete(
+  '/api/admin/feed/:id',
+  requireAuth,
+  async (req: AuthRequest, res: Response) => {
+    try {
+      const admin = req.adminUser!;
+      const postId = Number(req.params.id);
+      const existingRows = await db
+        .select()
+        .from(feedPosts)
+        .where(eq(feedPosts.id, postId));
+
+      if (existingRows.length === 0) {
+        return res.status(404).json({ error: 'Feed post not found.' });
+      }
+      const existing = existingRows[0];
+
+      if (!canAccessClass(admin, existing.classCode)) {
+        return res.status(403).json({
+          error: 'Forbidden: You cannot delete feed posts from another class.',
+        });
+      }
+
+      await db.delete(feedPosts).where(eq(feedPosts.id, postId));
+
+      await logActivity({
+        actorEmail: admin.email,
+        actorRole: admin.role,
+        action: 'DELETE_FEED_POST',
+        targetType: 'FEED_POST',
+        targetId: String(postId),
+        classCode: existing.classCode,
+        details: `Deleted feed post "${existing.title}" from ${existing.classCode}.`,
+      });
+
+      return res.json({ deletedId: postId });
+    } catch (error: any) {
+      return res
+        .status(400)
+        .json({ error: error.message || 'Failed to delete feed post.' });
+    }
+  }
+);
+
+// ============================================================================
+// 7. WEEKLY OFFICIAL RESULTS ENDPOINTS (SUPER ADMIN ONLY)
+// ============================================================================
+app.post(
+  '/api/admin/results',
+  requireAuth,
+  requireSuperAdmin,
+  async (req: AuthRequest, res: Response) => {
+    try {
+      const admin = req.adminUser!;
+      const {
+        resultCategory,
+        winnerName,
+        winnerPhotoUrl,
+        winnerClass,
+        weekLabel,
+        resultDate,
+        remarks,
+        publicationStatus,
+      } = req.body || {};
+
+      if (
+        !RESULT_CATEGORIES.includes(resultCategory as 'Best Speaker' | 'Best Naat')
+      ) {
+        return res.status(400).json({
+          error: "Result category must be 'Best Speaker' or 'Best Naat'.",
+        });
+      }
+      if (!isValidClass(String(winnerClass || ''))) {
+        return res
+          .status(400)
+          .json({ error: 'Winner class must be one of U1, U2, U3, U4, U5, or U6.' });
+      }
+      if (!winnerName || !winnerPhotoUrl || !weekLabel || !resultDate) {
+        return res.status(400).json({
+          error:
+            'Winner name, photograph, week period, and result date are required.',
+        });
+      }
+
+      const inserted = await db
+        .insert(weeklyResults)
+        .values({
+          resultCategory: String(resultCategory),
+          winnerName: String(winnerName).trim(),
+          winnerPhotoUrl: String(winnerPhotoUrl).trim(),
+          winnerClass: String(winnerClass),
+          weekLabel: String(weekLabel).trim(),
+          resultDate: String(resultDate).trim(),
+          remarks: remarks ? String(remarks).trim() : null,
+          publicationStatus: publicationStatus || 'PUBLISHED',
+          publishedByEmail: admin.email,
+        })
+        .returning();
+
+      await logActivity({
+        actorEmail: admin.email,
+        actorRole: admin.role,
+        action: 'PUBLISH_WEEKLY_RESULT',
+        targetType: 'WEEKLY_RESULT',
+        targetId: String(inserted[0].id),
+        classCode: String(winnerClass),
+        details: `Published official ${resultCategory} result for ${weekLabel}: ${winnerName} (${winnerClass}).`,
+      });
+
+      return res.status(201).json({ result: inserted[0] });
+    } catch (error: any) {
+      return res
+        .status(400)
+        .json({ error: error.message || 'Failed to publish weekly result.' });
+    }
+  }
+);
+
+app.put(
+  '/api/admin/results/:id',
+  requireAuth,
+  requireSuperAdmin,
+  async (req: AuthRequest, res: Response) => {
+    try {
+      const admin = req.adminUser!;
+      const resultId = Number(req.params.id);
+      const existingRows = await db
+        .select()
+        .from(weeklyResults)
+        .where(eq(weeklyResults.id, resultId));
+      if (existingRows.length === 0) {
+        return res.status(404).json({ error: 'Weekly result record not found.' });
+      }
+      const existing = existingRows[0];
+
+      const {
+        resultCategory,
+        winnerName,
+        winnerPhotoUrl,
+        winnerClass,
+        weekLabel,
+        resultDate,
+        remarks,
+        publicationStatus,
+      } = req.body || {};
+
+      if (winnerClass && !isValidClass(String(winnerClass))) {
+        return res.status(400).json({ error: 'Winner class must be U1–U6.' });
+      }
+
+      const updated = await db
+        .update(weeklyResults)
+        .set({
+          resultCategory: resultCategory ?? existing.resultCategory,
+          winnerName: winnerName ? String(winnerName).trim() : existing.winnerName,
+          winnerPhotoUrl: winnerPhotoUrl
+            ? String(winnerPhotoUrl).trim()
+            : existing.winnerPhotoUrl,
+          winnerClass: winnerClass ?? existing.winnerClass,
+          weekLabel: weekLabel ? String(weekLabel).trim() : existing.weekLabel,
+          resultDate: resultDate ? String(resultDate).trim() : existing.resultDate,
+          remarks: remarks !== undefined ? remarks : existing.remarks,
+          publicationStatus: publicationStatus ?? existing.publicationStatus,
+          updatedAt: new Date(),
+        })
+        .where(eq(weeklyResults.id, resultId))
+        .returning();
+
+      await logActivity({
+        actorEmail: admin.email,
+        actorRole: admin.role,
+        action: 'UPDATE_WEEKLY_RESULT',
+        targetType: 'WEEKLY_RESULT',
+        targetId: String(resultId),
+        classCode: updated[0].winnerClass,
+        details: `Updated official weekly result #${resultId} (${updated[0].resultCategory} — ${updated[0].winnerName}).`,
+      });
+
+      return res.json({ result: updated[0] });
+    } catch (error: any) {
+      return res
+        .status(400)
+        .json({ error: error.message || 'Failed to update weekly result.' });
+    }
+  }
+);
+
+app.delete(
+  '/api/admin/results/:id',
+  requireAuth,
+  requireSuperAdmin,
+  async (req: AuthRequest, res: Response) => {
+    try {
+      const admin = req.adminUser!;
+      const resultId = Number(req.params.id);
+      await db.delete(weeklyResults).where(eq(weeklyResults.id, resultId));
+
+      await logActivity({
+        actorEmail: admin.email,
+        actorRole: admin.role,
+        action: 'DELETE_WEEKLY_RESULT',
+        targetType: 'WEEKLY_RESULT',
+        targetId: String(resultId),
+        details: `Removed weekly result record #${resultId}.`,
+      });
+
+      return res.json({ deletedId: resultId });
+    } catch (error: any) {
+      return res
+        .status(400)
+        .json({ error: error.message || 'Failed to delete weekly result.' });
+    }
+  }
+);
+
+// ============================================================================
+// 8. DIGITAL LIBRARY ENDPOINTS (COMMON + U1..U6 CLASS LIBRARIES)
+// ============================================================================
+app.post(
+  '/api/admin/library',
+  requireAuth,
+  async (req: AuthRequest, res: Response) => {
+    try {
+      const admin = req.adminUser!;
+      const {
+        title,
+        description,
+        author,
+        category,
+        libraryScope,
+        fileUrl,
+        fileType,
+        fileSize,
+        contentPreview,
+        publicationStatus,
+      } = req.body || {};
+
+      if (
+        !LIBRARY_CATEGORIES.includes(
+          category as (typeof LIBRARY_CATEGORIES)[number]
+        )
+      ) {
+        return res.status(400).json({
+          error: `Invalid library category. Allowed categories: ${LIBRARY_CATEGORIES.join(
+            ', '
+          )}`,
+        });
+      }
+
+      const targetScope =
+        admin.role === 'CLASS_ADMIN'
+          ? admin.assignedClass!
+          : String(libraryScope || 'COMMON');
+
+      if (
+        admin.role === 'CLASS_ADMIN' &&
+        libraryScope &&
+        libraryScope !== admin.assignedClass
+      ) {
+        return res.status(403).json({
+          error: `Forbidden: Class Admin for ${admin.assignedClass} can only upload to the ${admin.assignedClass} Class Library.`,
+        });
+      }
+
+      if (targetScope !== 'COMMON' && !isValidClass(targetScope)) {
+        return res.status(400).json({
+          error: 'Library scope must be COMMON or one of U1–U6.',
+        });
+      }
+
+      if (!title || !description || !fileUrl) {
+        return res.status(400).json({
+          error: 'Resource title, description, and file/URL are required.',
+        });
+      }
+
+      const inserted = await db
+        .insert(libraryResources)
+        .values({
+          title: String(title).trim(),
+          description: String(description).trim(),
+          author: String(author || admin.name).trim(),
+          category: String(category),
+          libraryScope: targetScope,
+          fileUrl: String(fileUrl).trim(),
+          fileType: String(fileType || 'PDF').toUpperCase(),
+          fileSize: String(fileSize || '1.0 MB'),
+          contentPreview: contentPreview ? String(contentPreview) : null,
+          publicationStatus: publicationStatus || 'PUBLISHED',
+          uploadedByEmail: admin.email,
+        })
+        .returning();
+
+      await logActivity({
+        actorEmail: admin.email,
+        actorRole: admin.role,
+        action: 'ADD_LIBRARY_RESOURCE',
+        targetType: 'LIBRARY_RESOURCE',
+        targetId: String(inserted[0].id),
+        classCode: targetScope === 'COMMON' ? undefined : targetScope,
+        details: `Added ${category} resource "${inserted[0].title}" to ${targetScope} library.`,
+      });
+
+      return res.status(201).json({ resource: inserted[0] });
+    } catch (error: any) {
+      return res
+        .status(400)
+        .json({ error: error.message || 'Failed to add library resource.' });
+    }
+  }
+);
+
+app.delete(
+  '/api/admin/library/:id',
+  requireAuth,
+  async (req: AuthRequest, res: Response) => {
+    try {
+      const admin = req.adminUser!;
+      const resourceId = Number(req.params.id);
+      const existingRows = await db
+        .select()
+        .from(libraryResources)
+        .where(eq(libraryResources.id, resourceId));
+      if (existingRows.length === 0) {
+        return res.status(404).json({ error: 'Library resource not found.' });
+      }
+      const existing = existingRows[0];
+
+      if (
+        admin.role === 'CLASS_ADMIN' &&
+        existing.libraryScope !== admin.assignedClass
+      ) {
+        return res.status(403).json({
+          error:
+            'Forbidden: Class Admins can only manage resources in their own assigned class library.',
+        });
+      }
+
+      await db
+        .delete(libraryResources)
+        .where(eq(libraryResources.id, resourceId));
+
+      await logActivity({
+        actorEmail: admin.email,
+        actorRole: admin.role,
+        action: 'DELETE_LIBRARY_RESOURCE',
+        targetType: 'LIBRARY_RESOURCE',
+        targetId: String(resourceId),
+        classCode:
+          existing.libraryScope === 'COMMON' ? undefined : existing.libraryScope,
+        details: `Removed library resource "${existing.title}" from ${existing.libraryScope}.`,
+      });
+
+      return res.json({ deletedId: resourceId });
+    } catch (error: any) {
+      return res
+        .status(400)
+        .json({ error: error.message || 'Failed to delete library resource.' });
+    }
+  }
+);
+
+// ============================================================================
+// 9. USERS / ADMIN MANAGEMENT ENDPOINTS (SUPER ADMIN ONLY, 1-ADMIN-PER-CLASS)
+// ============================================================================
+app.post(
+  '/api/admin/users',
+  requireAuth,
+  requireSuperAdmin,
+  async (req: AuthRequest, res: Response) => {
+    try {
+      const superAdmin = req.adminUser!;
+      const {
+        email,
+        name,
+        role,
+        assignedClass,
+        password,
+        replaceExistingClassAdmin,
+      } = req.body || {};
+
+      if (!email || !name || !role) {
+        return res
+          .status(400)
+          .json({ error: 'Administrator name, email, and role are required.' });
+      }
+      if (role !== 'SUPER_ADMIN' && role !== 'CLASS_ADMIN') {
+        return res
+          .status(400)
+          .json({ error: "Role must be 'SUPER_ADMIN' or 'CLASS_ADMIN'." });
+      }
+
+      const normalizedEmail = String(email).trim().toLowerCase();
+      let targetClass: string | null = null;
+
+      if (role === 'CLASS_ADMIN') {
+        if (!assignedClass || !isValidClass(String(assignedClass))) {
+          return res.status(400).json({
+            error:
+              'Class Admin must be assigned to exactly one valid class (U1–U6).',
+          });
+        }
+        targetClass = String(assignedClass);
+      }
+
+      const createdUser = await db.transaction(async (tx) => {
+        const existingEmail = await tx
+          .select()
+          .from(users)
+          .where(eq(users.email, normalizedEmail));
+        if (existingEmail.length > 0) {
+          throw new Error(
+            `An administrator with email ${normalizedEmail} already exists.`
+          );
+        }
+
+        if (role === 'CLASS_ADMIN' && targetClass) {
+          const activeForClass = await tx
+            .select()
+            .from(users)
+            .where(
+              and(
+                eq(users.role, 'CLASS_ADMIN'),
+                eq(users.assignedClass, targetClass),
+                eq(users.status, 'ACTIVE')
+              )
+            );
+
+          if (activeForClass.length > 0) {
+            if (!replaceExistingClassAdmin) {
+              throw new Error(
+                `Class ${targetClass} already has an active Class Admin (${activeForClass[0].email}). Only one active Class Admin is allowed per class. Check "Replace existing Class Admin" to reassign.`
+              );
+            }
+            // Deactivate previous Class Admin for this class to preserve the strict 1-active-Class-Admin-per-class invariant
+            for (const prev of activeForClass) {
+              await tx
+                .update(users)
+                .set({ status: 'DEACTIVATED', updatedAt: new Date() })
+                .where(eq(users.id, prev.id));
+            }
+          }
+
+          await tx
+            .update(classes)
+            .set({ adminEmail: normalizedEmail, updatedAt: new Date() })
+            .where(eq(classes.code, targetClass));
+        }
+
+        const pwHash = hashPassword(String(password || 'IlmAdmin#2026'));
+        const inserted = await tx
+          .insert(users)
+          .values({
+            uid: `provisioned-${crypto.randomUUID()}`,
+            email: normalizedEmail,
+            name: String(name).trim(),
+            role,
+            assignedClass: targetClass,
+            status: 'ACTIVE',
+            passwordHash: pwHash,
+          })
+          .returning();
+
+        return inserted[0];
+      });
+
+      await logActivity({
+        actorEmail: superAdmin.email,
+        actorRole: superAdmin.role,
+        action: 'CREATE_ADMIN_USER',
+        targetType: 'USER',
+        targetId: String(createdUser.id),
+        classCode: targetClass || undefined,
+        details: `Created administrator ${createdUser.name} (${createdUser.email}) with role ${createdUser.role}${
+          targetClass ? ` assigned to ${targetClass}` : ''
+        }.`,
+      });
+
+      return res.status(201).json({
+        user: {
+          id: createdUser.id,
+          uid: createdUser.uid,
+          email: createdUser.email,
+          name: createdUser.name,
+          role: createdUser.role,
+          assignedClass: createdUser.assignedClass,
+          status: createdUser.status,
+          createdAt: createdUser.createdAt,
+        },
+      });
+    } catch (error: any) {
+      return res
+        .status(400)
+        .json({ error: error.message || 'Failed to create administrator.' });
+    }
+  }
+);
+
+app.patch(
+  '/api/admin/users/:id',
+  requireAuth,
+  requireSuperAdmin,
+  async (req: AuthRequest, res: Response) => {
+    try {
+      const superAdmin = req.adminUser!;
+      const targetUserId = Number(req.params.id);
+      const {
+        name,
+        role,
+        assignedClass,
+        status,
+        newPassword,
+        replaceExistingClassAdmin,
+      } = req.body || {};
+
+      const existingRows = await db
+        .select()
+        .from(users)
+        .where(eq(users.id, targetUserId));
+      if (existingRows.length === 0) {
+        return res.status(404).json({ error: 'Administrator account not found.' });
+      }
+      const existing = existingRows[0];
+
+      const nextRole = role ?? existing.role;
+      const nextStatus = status ?? existing.status;
+      const nextClass =
+        nextRole === 'SUPER_ADMIN'
+          ? null
+          : assignedClass !== undefined
+          ? assignedClass
+          : existing.assignedClass;
+
+      if (nextRole === 'CLASS_ADMIN' && (!nextClass || !isValidClass(nextClass))) {
+        return res.status(400).json({
+          error: 'Class Admin must be assigned to a valid class (U1–U6).',
+        });
+      }
+
+      const updatedUser = await db.transaction(async (tx) => {
+        if (
+          nextRole === 'CLASS_ADMIN' &&
+          nextStatus === 'ACTIVE' &&
+          nextClass
+        ) {
+          const conflicting = await tx
+            .select()
+            .from(users)
+            .where(
+              and(
+                eq(users.role, 'CLASS_ADMIN'),
+                eq(users.assignedClass, nextClass),
+                eq(users.status, 'ACTIVE')
+              )
+            );
+          const others = conflicting.filter((u) => u.id !== existing.id);
+          if (others.length > 0) {
+            if (!replaceExistingClassAdmin) {
+              throw new Error(
+                `Class ${nextClass} already has an active Class Admin (${others[0].email}). Check "Replace existing Class Admin" to reassign.`
+              );
+            }
+            for (const o of others) {
+              await tx
+                .update(users)
+                .set({ status: 'DEACTIVATED', updatedAt: new Date() })
+                .where(eq(users.id, o.id));
+            }
+          }
+
+          await tx
+            .update(classes)
+            .set({ adminEmail: existing.email, updatedAt: new Date() })
+            .where(eq(classes.code, nextClass));
+        }
+
+        const updatePayload: Record<string, any> = {
+          name: name ? String(name).trim() : existing.name,
+          role: nextRole,
+          assignedClass: nextClass,
+          status: nextStatus,
+          updatedAt: new Date(),
+        };
+
+        if (newPassword && String(newPassword).trim().length >= 6) {
+          updatePayload.passwordHash = hashPassword(String(newPassword).trim());
+        }
+
+        const resRows = await tx
+          .update(users)
+          .set(updatePayload)
+          .where(eq(users.id, existing.id))
+          .returning();
+
+        return resRows[0];
+      });
+
+      await logActivity({
+        actorEmail: superAdmin.email,
+        actorRole: superAdmin.role,
+        action: 'UPDATE_ADMIN_USER',
+        targetType: 'USER',
+        targetId: String(updatedUser.id),
+        classCode: updatedUser.assignedClass || undefined,
+        details: `Updated administrator ${updatedUser.email}: role=${updatedUser.role}, class=${
+          updatedUser.assignedClass || 'Global'
+        }, status=${updatedUser.status}.`,
+      });
+
+      return res.json({
+        user: {
+          id: updatedUser.id,
+          uid: updatedUser.uid,
+          email: updatedUser.email,
+          name: updatedUser.name,
+          role: updatedUser.role,
+          assignedClass: updatedUser.assignedClass,
+          status: updatedUser.status,
+          updatedAt: updatedUser.updatedAt,
+        },
+      });
+    } catch (error: any) {
+      return res
+        .status(400)
+        .json({ error: error.message || 'Failed to update administrator.' });
+    }
+  }
+);
+
+// ============================================================================
+// 10. PLATFORM SETTINGS & FILE UPLOAD ENDPOINTS
+// ============================================================================
+app.put(
+  '/api/admin/settings',
+  requireAuth,
+  requireSuperAdmin,
+  async (req: AuthRequest, res: Response) => {
+    try {
+      const superAdmin = req.adminUser!;
+      const { settings, classDescriptions } = req.body || {};
+
+      if (settings && typeof settings === 'object') {
+        for (const [key, value] of Object.entries(settings)) {
+          await db
+            .insert(platformSettings)
+            .values({
+              settingKey: key,
+              settingValue: String(value),
+              updatedAt: new Date(),
+            })
+            .onConflictDoUpdate({
+              target: platformSettings.settingKey,
+              set: { settingValue: String(value), updatedAt: new Date() },
+            });
+        }
+      }
+
+      if (classDescriptions && Array.isArray(classDescriptions)) {
+        for (const item of classDescriptions) {
+          if (item.code && isValidClass(item.code)) {
+            await db
+              .update(classes)
+              .set({
+                name: item.name ? String(item.name).trim() : undefined,
+                description: item.description
+                  ? String(item.description).trim()
+                  : undefined,
+                updatedAt: new Date(),
+              })
+              .where(eq(classes.code, item.code));
+          }
+        }
+      }
+
+      await logActivity({
+        actorEmail: superAdmin.email,
+        actorRole: superAdmin.role,
+        action: 'UPDATE_PLATFORM_SETTINGS',
+        targetType: 'SETTINGS',
+        details: 'Updated global ILM platform settings and class metadata.',
+      });
+
+      return res.json({ message: 'Platform settings saved successfully.' });
+    } catch (error: any) {
+      return res
+        .status(400)
+        .json({ error: error.message || 'Failed to update platform settings.' });
+    }
+  }
+);
+
+const ALLOWED_EXTENSIONS = new Set([
+  '.jpg',
+  '.jpeg',
+  '.png',
+  '.webp',
+  '.pdf',
+  '.pptx',
+  '.ppt',
+  '.mp4',
+  '.webm',
+  '.mp3',
+  '.wav',
+  '.txt',
+  '.md',
+  '.ts',
+  '.py',
+  '.json',
+]);
+
+app.post(
+  '/api/admin/upload',
+  requireAuth,
+  async (req: AuthRequest, res: Response) => {
+    try {
+      const { fileName, base64Data } = req.body || {};
+      if (!fileName || !base64Data) {
+        return res
+          .status(400)
+          .json({ error: 'File name and file data are required.' });
+      }
+
+      const ext = path.extname(String(fileName)).toLowerCase();
+      if (!ALLOWED_EXTENSIONS.has(ext)) {
+        return res.status(400).json({
+          error: `Unsupported or unsafe file extension '${ext}'. Allowed formats: JPG, PNG, WEBP, PDF, PPTX, MP4, MP3, TXT, TS, JSON.`,
+        });
+      }
+
+      // Extract raw base64 payload if data URL prefix is included
+      const base64Clean = String(base64Data).includes(',')
+        ? String(base64Data).split(',')[1]
+        : String(base64Data);
+
+      const buffer = Buffer.from(base64Clean, 'base64');
+      if (buffer.byteLength > 15 * 1024 * 1024) {
+        return res
+          .status(400)
+          .json({ error: 'File size exceeds the 15 MB maximum upload limit.' });
+      }
+
+      const safeBase = path
+        .basename(String(fileName), ext)
+        .replace(/[^a-zA-Z0-9_-]/g, '_')
+        .slice(0, 48);
+      const finalName = `${safeBase}_${Date.now()}${ext}`;
+      const filePath = path.join(uploadsDir, finalName);
+
+      fs.writeFileSync(filePath, buffer);
+
+      const sizeKB = Math.max(1, Math.round(buffer.byteLength / 1024));
+      const formattedSize =
+        sizeKB >= 1024
+          ? `${(sizeKB / 1024).toFixed(1)} MB`
+          : `${sizeKB} KB`;
+
+      return res.status(201).json({
+        fileUrl: `/uploads/${finalName}`,
+        fileType: ext.replace('.', '').toUpperCase(),
+        fileSize: formattedSize,
+      });
+    } catch (error: any) {
+      console.error('Upload error:', error);
+      return res
+        .status(400)
+        .json({ error: 'File upload failed. Please check the file format.' });
+    }
+  }
+);
+
+// ============================================================================
+// VITE DEV MIDDLEWARE OR PRODUCTION STATIC ASSETS
+// ============================================================================
+async function startServer() {
+  if (process.env.NODE_ENV !== 'production') {
+    const vite = await createViteServer({
+      server: { middlewareMode: true },
+      appType: 'spa',
+    });
+    app.use(vite.middlewares);
+  } else {
+    const distPath = path.join(process.cwd(), 'dist');
+    app.use(express.static(distPath));
+    app.get('*', (_req, res) => {
+      res.sendFile(path.join(distPath, 'index.html'));
+    });
+  }
+
+  app.listen(PORT, '0.0.0.0', () => {
+    console.log(`ILM — Integrated Learning Master server running on port ${PORT}`);
+  });
+}
+
+startServer();

@@ -1,0 +1,130 @@
+import React, { useState, useEffect, useCallback } from 'react';
+import { signOut } from 'firebase/auth';
+import { auth } from './lib/firebase.ts';
+import { AdminUser, PublicBootstrapData } from './types.ts';
+import { PublicWebsite } from './components/PublicWebsite.tsx';
+import { AdminLoginModal } from './components/AdminLoginModal.tsx';
+import { AdminDashboard } from './components/AdminDashboard.tsx';
+import { IlmLogo } from './components/IlmLogo.tsx';
+
+const EMPTY_BOOTSTRAP: PublicBootstrapData = {
+  classes: [],
+  categories: [],
+  participants: [],
+  posters: [],
+  feedPosts: [],
+  weeklyResults: [],
+  libraryResources: [],
+  settings: {},
+};
+
+export default function App() {
+  const [bootstrapData, setBootstrapData] =
+    useState<PublicBootstrapData>(EMPTY_BOOTSTRAP);
+  const [loadingPublic, setLoadingPublic] = useState(true);
+  const [publicError, setPublicError] = useState<string | null>(null);
+
+  // Auth state stored in memory (per Cloud SQL + Firebase Auth security guidelines)
+  const [authToken, setAuthToken] = useState<string | null>(null);
+  const [adminUser, setAdminUser] = useState<AdminUser | null>(null);
+  const [showLoginModal, setShowLoginModal] = useState(false);
+  const [viewMode, setViewMode] = useState<'PUBLIC' | 'DASHBOARD'>('PUBLIC');
+
+  const loadPublicBootstrap = useCallback(async () => {
+    try {
+      setPublicError(null);
+      const res = await fetch('/api/public/bootstrap');
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || 'Failed to load ILM platform data.');
+      }
+      setBootstrapData(data);
+    } catch (err: any) {
+      setPublicError(
+        err.message || 'Unable to connect to the ILM platform server.'
+      );
+    } finally {
+      setLoadingPublic(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadPublicBootstrap();
+  }, [loadPublicBootstrap]);
+
+  const handleLoginSuccess = (token: string, user: AdminUser) => {
+    setAuthToken(token);
+    setAdminUser(user);
+    setShowLoginModal(false);
+    setViewMode('DASHBOARD');
+  };
+
+  const handleLogout = async () => {
+    try {
+      await signOut(auth);
+    } catch {
+      // Ignore if signed in via backend credentials token
+    }
+    setAuthToken(null);
+    setAdminUser(null);
+    setViewMode('PUBLIC');
+  };
+
+  if (loadingPublic) {
+    return (
+      <div className="min-h-screen bg-[#07080C] text-white flex flex-col items-center justify-center p-6">
+        <IlmLogo size="lg" showSubtitle />
+        <p className="text-xs text-neutral-400 tracking-widest uppercase mt-6 animate-pulse">
+          Loading Integrated Learning Master...
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <>
+      {publicError && (
+        <div className="bg-red-950/90 border-b border-red-700 px-6 py-3 text-xs text-red-200 flex items-center justify-between">
+          <span>{publicError}</span>
+          <button
+            type="button"
+            onClick={loadPublicBootstrap}
+            className="px-3 py-1 rounded bg-red-800 hover:bg-red-700 text-white font-semibold cursor-pointer"
+          >
+            Retry Connection
+          </button>
+        </div>
+      )}
+
+      {viewMode === 'DASHBOARD' && authToken && adminUser ? (
+        <AdminDashboard
+          token={authToken}
+          currentUser={adminUser}
+          onLogout={handleLogout}
+          onSwitchToPublic={() => setViewMode('PUBLIC')}
+          onPublicDataChanged={loadPublicBootstrap}
+        />
+      ) : (
+        <PublicWebsite
+          data={bootstrapData}
+          currentAdmin={adminUser}
+          onOpenAdminLogin={() => setShowLoginModal(true)}
+          onSwitchToDashboard={() => {
+            if (authToken && adminUser) {
+              setViewMode('DASHBOARD');
+            } else {
+              setShowLoginModal(true);
+            }
+          }}
+        />
+      )}
+
+      {showLoginModal && (
+        <AdminLoginModal
+          onClose={() => setShowLoginModal(false)}
+          onLoginSuccess={handleLoginSuccess}
+        />
+      )}
+    </>
+  );
+}
