@@ -13,6 +13,7 @@ import {
   LayoutGrid,
   Library,
   Lock,
+  Mail,
   Search,
   Sparkles,
   Trophy,
@@ -20,6 +21,10 @@ import {
   X,
   ChevronLeft,
   ChevronRight,
+  Share2,
+  Sliders,
+  Upload,
+  Check,
 } from 'lucide-react';
 import {
   AdminUser,
@@ -34,7 +39,7 @@ import {
 } from '../types.ts';
 import { IlmLogo, downloadPosterAsPng } from './IlmLogo.tsx';
 import { PosterStageCard } from './PosterStageCard.tsx';
-import { CompetitionStageAndTimer } from './CompetitionStageAndTimer.tsx';
+import { PosterPhotoshopStudio } from './PosterPhotoshopStudio.tsx';
 
 export type PublicTab =
   | 'home'
@@ -68,6 +73,7 @@ interface PublicWebsiteProps {
   currentAdmin: AdminUser | null;
   onOpenAdminLogin: () => void;
   onSwitchToDashboard: () => void;
+  onRefreshData?: () => void;
 }
 
 export const PublicWebsite: React.FC<PublicWebsiteProps> = ({
@@ -75,9 +81,12 @@ export const PublicWebsite: React.FC<PublicWebsiteProps> = ({
   currentAdmin,
   onOpenAdminLogin,
   onSwitchToDashboard,
+  onRefreshData,
 }) => {
   const [activeTab, setActiveTab] = useState<PublicTab>('home');
   const [featuredPosterIndex, setFeaturedPosterIndex] = useState(0);
+  const [studioPoster, setStudioPoster] = useState<PosterRecord | null>(null);
+  const [copiedFeedId, setCopiedFeedId] = useState<number | null>(null);
 
   // Class view state
   const [selectedClass, setSelectedClass] = useState<ClassCode>('U2');
@@ -93,11 +102,14 @@ export const PublicWebsite: React.FC<PublicWebsiteProps> = ({
     null
   );
 
-  // Feed view filters
+  // Feed view filters & Full Post Viewer Modal
   const [feedClassFilter, setFeedClassFilter] = useState<'ALL' | ClassCode>(
     'ALL'
   );
   const [feedSearch, setFeedSearch] = useState('');
+  const [inspectedFeedPost, setInspectedFeedPost] =
+    useState<FeedPostRecord | null>(null);
+  const [showAllHomeFeed, setShowAllHomeFeed] = useState(false);
 
   // Weekly Results filters
   const [resultCategoryFilter, setResultCategoryFilter] = useState<
@@ -301,10 +313,61 @@ export const PublicWebsite: React.FC<PublicWebsiteProps> = ({
   const handleDownloadFeedPost = (fp: FeedPostRecord) => {
     const link = document.createElement('a');
     link.href = fp.mediaUrl;
-    link.download = `ILM_${fp.classCode}_Feed_${fp.id}.jpg`;
+    link.download = `ILM_${fp.classCode}_Feed_${fp.id}.png`;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+  };
+
+  const handleShareFeedPost = async (fp: FeedPostRecord) => {
+    const shareUrl = fp.mediaUrl.startsWith('http')
+      ? fp.mediaUrl
+      : window.location.href;
+    if (navigator.share) {
+      try {
+        await navigator.share({
+          title: fp.title,
+          text: fp.caption,
+          url: shareUrl,
+        });
+        return;
+      } catch {
+        // Fallback to clipboard
+      }
+    }
+    try {
+      await navigator.clipboard.writeText(shareUrl);
+      setCopiedFeedId(fp.id);
+      setTimeout(() => setCopiedFeedId(null), 2500);
+    } catch {
+      // ignore
+    }
+  };
+
+  const handleEditFeedPostInStudio = (fp: FeedPostRecord) => {
+    const matchingPoster =
+      data.posters.find((p) => p.classCode === fp.classCode) || {
+        id: data.posters[0]?.id || 1,
+        classCode: fp.classCode,
+        categoryName: 'All Categories',
+        title: fp.title,
+        subtitle: fp.caption,
+        posterImageUrl: fp.mediaUrl,
+        participantCount: data.participants.filter(
+          (p) => p.classCode === fp.classCode
+        ).length,
+        participantsSnapshot: JSON.stringify(
+          data.participants.filter((p) => p.classCode === fp.classCode)
+        ),
+        generationStatus: 'GENERATED' as const,
+        publicationStatus: 'PUBLISHED' as const,
+        isFeatured: true,
+        updatedAt: fp.createdAt,
+      };
+    setStudioPoster({
+      ...matchingPoster,
+      posterImageUrl: fp.mediaUrl,
+    });
   };
 
   return (
@@ -348,26 +411,25 @@ export const PublicWebsite: React.FC<PublicWebsiteProps> = ({
           ))}
         </nav>
 
-        {/* Zone 3: 1 primary action (Admin Login or Dashboard) */}
+        {/* Zone 3: 1 primary action (Gmail Login) */}
         <div className="flex items-center gap-3 shrink-0">
           {currentAdmin ? (
             <button
               type="button"
               onClick={onSwitchToDashboard}
-              className="px-4 py-2 text-xs font-semibold text-neutral-950 bg-gradient-to-r from-[#C89D2E] via-[#E8C55B] to-[#C89D2E] rounded-lg hover:brightness-110 transition-all whitespace-nowrap shrink-0 cursor-pointer"
+              className="inline-flex items-center gap-2 px-4 py-2 text-xs font-semibold text-neutral-950 bg-gradient-to-r from-[#C89D2E] via-[#E8C55B] to-[#C89D2E] rounded-lg hover:brightness-110 transition-all whitespace-nowrap shrink-0 cursor-pointer"
             >
-              {currentAdmin.role === 'SUPER_ADMIN'
-                ? 'Super Admin Dashboard'
-                : `${currentAdmin.assignedClass} Admin Dashboard`}
+              <Mail className="w-3.5 h-3.5" />
+              <span>{currentAdmin.email}</span>
             </button>
           ) : (
             <button
               type="button"
               onClick={onOpenAdminLogin}
-              className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-semibold text-[#F3D068] bg-[#141722] border border-[#D4AF37]/45 rounded-lg hover:bg-[#1B2030] transition-colors whitespace-nowrap shrink-0 cursor-pointer"
+              className="inline-flex items-center gap-2 px-4 py-2 text-xs font-semibold text-[#F3D068] bg-[#141722] border border-[#D4AF37]/45 rounded-lg hover:bg-[#1B2030] transition-colors whitespace-nowrap shrink-0 cursor-pointer"
             >
-              <Lock className="w-3.5 h-3.5" />
-              <span>Admin Login</span>
+              <Mail className="w-3.5 h-3.5 text-[#D4AF37]" />
+              <span>Gmail Login</span>
             </button>
           )}
         </div>
@@ -387,8 +449,7 @@ export const PublicWebsite: React.FC<PublicWebsiteProps> = ({
           <div className="flex items-center gap-4">
             {(
               [
-                { id: 'officers', label: 'Class Officers' },
-                { id: 'feed', label: 'Feed / Gallery' },
+                { id: 'officers', label: 'Class Teachers & Officers' },
                 { id: 'about', label: 'About ILM' },
                 { id: 'contact', label: 'Contact' },
               ] as const
@@ -415,20 +476,238 @@ export const PublicWebsite: React.FC<PublicWebsiteProps> = ({
          ===================================================================== */}
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8 sm:py-10">
         {/* -------------------------------------------------------------------
-            TAB 1: HOME PAGE (FEATURED POSTER MAIN ATTRACTION + SHORTCUTS)
+            TAB 1: HOME PAGE (PUBLIC FEED SECTION FIRST -> FEATURED POSTER -> SHORTCUTS)
            ------------------------------------------------------------------- */}
         {activeTab === 'home' && (
           <div className="space-y-14">
-            {/* Live Competition Stage (Qirat -> Naat -> Speech -> Table Topic) + Alarm Timer */}
-            <section aria-label="Live Competition Stage and Alarm Timer">
-              <CompetitionStageAndTimer participants={data.participants} />
+            {/* ===============================================================
+                1. PUBLIC HOME FEED SECTION (DISPLAYED BEFORE POSTER, COMPACT PREVIEW + FULL VIEW MODAL)
+               =============================================================== */}
+            <section
+              aria-label="Class & Community Feed"
+              className="p-5 sm:p-7 rounded-2xl bg-gradient-to-b from-[#0E1118] via-[#0B0E15] to-[#090B10] border-2 border-[#D4AF37]/45 shadow-2xl space-y-6"
+            >
+              <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 pb-4 border-b border-neutral-800">
+                <div>
+                  <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-[#D4AF37]/15 border border-[#D4AF37]/40 text-[11px] font-bold uppercase tracking-widest text-[#F3D068] mb-2">
+                    <Sparkles className="w-3.5 h-3.5" />
+                    <span>Live Class & Community Feed</span>
+                  </div>
+                  <h2 className="font-display text-2xl sm:text-3xl font-bold text-white">
+                    ILM Public Feed & Shared Class Posters
+                  </h2>
+                  <p className="text-xs sm:text-sm text-neutral-400 mt-1">
+                    Preview shared posters, photographs, and announcements from Classes U1–U6. Click <strong className="text-[#F3D068]">View Full Post</strong> on any card to open the complete poster & details.
+                  </p>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-2">
+                  {/* Quick Upload Pre-Made Poster to Feed */}
+                  <label className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-gradient-to-r from-[#C89D2E] via-[#E8C55B] to-[#C89D2E] hover:brightness-110 text-neutral-950 font-bold text-xs cursor-pointer shadow">
+                    <Upload className="w-3.5 h-3.5" />
+                    <span>+ Upload & Post to Feed</span>
+                    <input
+                      type="file"
+                      accept="image/png,image/jpeg,image/webp,image/gif"
+                      className="hidden"
+                      onChange={async (e) => {
+                        const file = e.target.files?.[0];
+                        if (!file) return;
+                        try {
+                          const base64Data = await new Promise<string>(
+                            (resolve, reject) => {
+                              const reader = new FileReader();
+                              reader.onload = () =>
+                                resolve(String(reader.result || ''));
+                              reader.onerror = () =>
+                                reject(new Error('Failed to read file'));
+                              reader.readAsDataURL(file);
+                            }
+                          );
+                          const targetCls =
+                            feedClassFilter === 'ALL' ? 'U1' : feedClassFilter;
+                          const targetPoster =
+                            data.posters.find(
+                              (p) => p.classCode === targetCls
+                            ) || data.posters[0];
+                          if (!targetPoster) return;
+                          await fetch(
+                            `/api/public/posters/${targetPoster.id}/share-to-feed`,
+                            {
+                              method: 'POST',
+                              headers: { 'Content-Type': 'application/json' },
+                              body: JSON.stringify({
+                                title: `Class ${targetCls} — ${file.name.replace(/\.[^.]+$/, '')}`,
+                                caption: `Uploaded and shared to the ILM Class ${targetCls} Public Feed.`,
+                                mediaUrl: base64Data,
+                                submittedByName: `Class ${targetCls} Feed`,
+                              }),
+                            }
+                          );
+                          if (onRefreshData) onRefreshData();
+                        } catch {
+                          // ignore
+                        } finally {
+                          e.target.value = '';
+                        }
+                      }}
+                    />
+                  </label>
+                </div>
+              </div>
+
+              {/* Class Filter Pills & Search */}
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div className="flex flex-wrap items-center gap-1.5">
+                  {(['ALL', ...VALID_CLASSES] as const).map((cls) => (
+                    <button
+                      key={cls}
+                      type="button"
+                      onClick={() => setFeedClassFilter(cls)}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+                        feedClassFilter === cls
+                          ? 'bg-[#D4AF37] text-neutral-950 shadow'
+                          : 'bg-[#121622] text-neutral-300 border border-neutral-800 hover:text-white'
+                      }`}
+                    >
+                      {cls === 'ALL' ? 'All Classes' : `Class ${cls}`}
+                    </button>
+                  ))}
+                </div>
+
+                <div className="relative w-full sm:w-64">
+                  <Search className="w-3.5 h-3.5 text-neutral-500 absolute left-3 top-1/2 -translate-y-1/2" />
+                  <input
+                    type="text"
+                    value={feedSearch}
+                    onChange={(e) => setFeedSearch(e.target.value)}
+                    placeholder="Search feed posts..."
+                    className="w-full pl-8 pr-3 py-1.5 rounded-lg bg-[#121622] border border-neutral-800 text-xs text-white focus:border-[#D4AF37] focus:outline-none"
+                  />
+                </div>
+              </div>
+
+              {/* Compact Feed Preview Cards (Partial view on Home; Full view when clicked) */}
+              {filteredFeedPosts.length > 0 ? (
+                <>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
+                    {(showAllHomeFeed
+                      ? filteredFeedPosts
+                      : filteredFeedPosts.slice(0, 6)
+                    ).map((post) => (
+                      <div
+                        key={post.id}
+                        className="group rounded-xl bg-[#111520] border border-neutral-800 hover:border-[#D4AF37]/60 overflow-hidden flex flex-col justify-between transition-all shadow-lg"
+                      >
+                        <div>
+                          {/* Compact Cropped Preview Thumbnail (Not full size until user clicks View) */}
+                          <div
+                            onClick={() => setInspectedFeedPost(post)}
+                            className="relative h-44 bg-[#0B0D14] overflow-hidden cursor-pointer border-b border-neutral-800/80"
+                          >
+                            <img
+                              src={post.mediaUrl}
+                              alt={post.title}
+                              referrerPolicy="no-referrer"
+                              className="w-full h-full object-cover object-top group-hover:scale-105 transition-transform duration-300"
+                            />
+                            <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/15 to-transparent flex items-end justify-between p-3">
+                              <span className="px-2.5 py-0.5 rounded-full bg-[#D4AF37] text-neutral-950 font-bold text-[10px] uppercase tracking-wider">
+                                Class {post.classCode} · {post.mediaType}
+                              </span>
+                              <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-black/75 border border-[#D4AF37]/60 text-[#F3D068] text-[11px] font-semibold">
+                                <Eye className="w-3.5 h-3.5" />
+                                <span>View Full</span>
+                              </span>
+                            </div>
+                          </div>
+
+                          {/* Truncated Preview Text */}
+                          <div className="p-4">
+                            <h3 className="font-display font-bold text-white text-sm line-clamp-1">
+                              {post.title}
+                            </h3>
+                            <p className="text-xs text-neutral-400 mt-1 line-clamp-2">
+                              {post.caption}
+                            </p>
+                          </div>
+                        </div>
+
+                        {/* Card Footer with View Full Post, Share, Edit & Download */}
+                        <div className="px-4 pb-3.5 pt-2.5 border-t border-neutral-800/80 flex items-center justify-between gap-2 text-xs">
+                          <button
+                            type="button"
+                            onClick={() => setInspectedFeedPost(post)}
+                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#D4AF37] hover:brightness-110 text-neutral-950 font-bold text-xs cursor-pointer"
+                          >
+                            <Eye className="w-3.5 h-3.5" />
+                            <span>View Full Post</span>
+                          </button>
+
+                          <div className="flex items-center gap-1.5">
+                            <button
+                              type="button"
+                              onClick={() => handleShareFeedPost(post)}
+                              className="p-1.5 rounded-lg bg-[#161B28] hover:bg-[#1E2536] text-emerald-300 border border-emerald-600/40 cursor-pointer"
+                              title="Share Feed Post"
+                            >
+                              {copiedFeedId === post.id ? (
+                                <Check className="w-3.5 h-3.5" />
+                              ) : (
+                                <Share2 className="w-3.5 h-3.5" />
+                              )}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleEditFeedPostInStudio(post)}
+                              className="p-1.5 rounded-lg bg-[#161B28] hover:bg-[#1E2536] text-[#F3D068] border border-[#D4AF37]/40 cursor-pointer"
+                              title="Edit in Photoshop Studio"
+                            >
+                              <Sliders className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleDownloadFeedPost(post)}
+                              className="p-1.5 rounded-lg bg-[#161B28] hover:bg-[#1E2536] text-neutral-200 border border-neutral-700 cursor-pointer"
+                              title="Download"
+                            >
+                              <Download className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+
+                  {filteredFeedPosts.length > 6 && (
+                    <div className="text-center pt-2">
+                      <button
+                        type="button"
+                        onClick={() => setShowAllHomeFeed((prev) => !prev)}
+                        className="px-5 py-2 rounded-xl bg-[#141824] hover:bg-[#1B2130] text-[#F3D068] border border-[#D4AF37]/45 text-xs font-semibold cursor-pointer"
+                      >
+                        {showAllHomeFeed
+                          ? 'Show Compact Feed Preview'
+                          : `Show All ${filteredFeedPosts.length} Feed Posts`}
+                      </button>
+                    </div>
+                  )}
+                </>
+              ) : (
+                <div className="p-8 rounded-xl bg-[#111520] border border-neutral-800 text-center text-sm text-neutral-400">
+                  No feed posts match your filter yet. Click “Share to Feed” on any class poster below to publish!
+                </div>
+              )}
             </section>
 
-            {/* Featured Unified Class Poster Showcase */}
+            {/* ===============================================================
+                2. FEATURED UNIFIED CLASS POSTER SHOWCASE (AFTER FEED)
+               =============================================================== */}
             <section aria-label="Featured Competition Poster">
               {currentFeaturedPoster ? (
                 <PosterStageCard
                   poster={currentFeaturedPoster}
+                  liveParticipants={data.participants}
                   isHero
                   onChangePoster={handleNextPoster}
                   onPrevPoster={handlePrevPoster}
@@ -437,6 +716,8 @@ export const PublicWebsite: React.FC<PublicWebsiteProps> = ({
                     featuredPosterIndex % Math.max(1, featuredSequence.length)
                   }
                   onInspectPoster={(p) => setInspectedPoster(p)}
+                  onOpenStudio={(p) => setStudioPoster(p)}
+                  onPosterUpdated={onRefreshData}
                 />
               ) : (
                 <div className="p-12 rounded-2xl bg-[#0E1118] border border-[#D4AF37]/40 text-center">
@@ -588,131 +869,74 @@ export const PublicWebsite: React.FC<PublicWebsiteProps> = ({
               </div>
             </section>
 
-            {/* Recent Approved Feed & Recently Added Public Library */}
-            <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
-              {/* Recent Approved Feed */}
-              <div className="lg:col-span-7">
-                <div className="flex items-center justify-between mb-4">
-                  <h2 className="font-display text-xl font-bold text-white">
-                    Recent Approved Class Feed
-                  </h2>
-                  <button
-                    type="button"
-                    onClick={() => setActiveTab('feed')}
-                    className="text-xs font-semibold text-[#F3D068] hover:underline cursor-pointer"
-                  >
-                    View Gallery →
-                  </button>
-                </div>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  {data.feedPosts.slice(0, 4).map((post) => (
-                    <div
-                      key={post.id}
-                      className="rounded-xl bg-[#0E1118] border border-neutral-800 overflow-hidden flex flex-col justify-between"
-                    >
-                      <div>
-                        <div className="aspect-video bg-[#141822] overflow-hidden relative">
-                          <img
-                            src={post.mediaUrl}
-                            alt={post.title}
-                            referrerPolicy="no-referrer"
-                            className="w-full h-full object-cover object-top"
-                          />
-                        </div>
-                        <div className="p-4">
-                          <div className="flex items-center gap-2 text-xs text-[#D4AF37] mb-1">
-                            <span>Class {post.classCode}</span>
-                            <span aria-hidden="true">·</span>
-                            <span>{post.mediaType}</span>
-                          </div>
-                          <h3 className="font-semibold text-white text-sm line-clamp-1">
-                            {post.title}
-                          </h3>
-                          <p className="text-xs text-neutral-400 mt-1 line-clamp-2">
-                            {post.caption}
-                          </p>
-                        </div>
-                      </div>
-                      <div className="px-4 pb-3 pt-2 border-t border-neutral-800/70 flex items-center justify-between text-xs text-neutral-400">
-                        <span className="truncate">{post.submittedByName}</span>
-                        <button
-                          type="button"
-                          onClick={() => handleDownloadFeedPost(post)}
-                          className="inline-flex items-center gap-1 text-[#F3D068] hover:underline shrink-0 cursor-pointer"
-                        >
-                          <Download className="w-3.5 h-3.5" />
-                          <span>Download</span>
-                        </button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              {/* Recently Added Public Library Resources */}
-              <div className="lg:col-span-5">
-                <div className="flex items-center justify-between mb-4">
-                  <h2 className="font-display text-xl font-bold text-white">
+            {/* Recently Added Public Library Resources */}
+            <section>
+              <div className="flex items-center justify-between mb-4">
+                <div>
+                  <h2 className="font-display text-xl sm:text-2xl font-bold text-white">
                     Digital Library Highlights
                   </h2>
-                  <button
-                    type="button"
-                    onClick={() => setActiveTab('library')}
-                    className="text-xs font-semibold text-[#F3D068] hover:underline cursor-pointer"
-                  >
-                    Open Library →
-                  </button>
+                  <p className="text-xs sm:text-sm text-neutral-400 mt-0.5">
+                    Explore books, research papers, notes, and multimedia learning resources across ILM cohorts.
+                  </p>
                 </div>
-                <div className="space-y-3">
-                  {data.libraryResources.slice(0, 4).map((res) => (
-                    <div
-                      key={res.id}
-                      className="p-4 rounded-xl bg-[#0E1118] border border-neutral-800 hover:border-[#D4AF37]/45 transition-colors flex items-start justify-between gap-4"
-                    >
-                      <div className="min-w-0">
-                        <div className="flex items-center gap-2 text-xs text-[#D4AF37]">
-                          <span>{res.category}</span>
-                          <span aria-hidden="true">·</span>
-                          <span>
-                            {res.libraryScope === 'COMMON'
-                              ? 'Common Library'
-                              : `Class ${res.libraryScope}`}
-                          </span>
-                          <span aria-hidden="true">·</span>
-                          <span className="font-mono-tabular text-neutral-400">
-                            {res.fileType}
-                          </span>
-                        </div>
-                        <h3 className="font-semibold text-sm text-white mt-1 truncate">
-                          {res.title}
-                        </h3>
-                        <p className="text-xs text-neutral-400 mt-0.5 line-clamp-1">
-                          {res.description}
-                        </p>
-                      </div>
-                      <div className="flex items-center gap-1.5 shrink-0">
-                        <button
-                          type="button"
-                          onClick={() => setPreviewResource(res)}
-                          className="p-2 rounded-lg bg-neutral-900 hover:bg-neutral-800 text-neutral-200 border border-neutral-700 cursor-pointer"
-                          title="Preview resource"
-                        >
-                          <Eye className="w-3.5 h-3.5" />
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => handleDownloadResource(res)}
-                          className="p-2 rounded-lg bg-[#161A26] hover:bg-[#1E2334] text-[#F3D068] border border-[#D4AF37]/40 cursor-pointer"
-                          title="Download resource"
-                        >
-                          <Download className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('library')}
+                  className="text-xs font-semibold text-[#F3D068] hover:underline cursor-pointer"
+                >
+                  Open Library →
+                </button>
               </div>
-            </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {data.libraryResources.slice(0, 4).map((res) => (
+                  <div
+                    key={res.id}
+                    className="p-4 rounded-xl bg-[#0E1118] border border-neutral-800 hover:border-[#D4AF37]/45 transition-colors flex items-start justify-between gap-4"
+                  >
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2 text-xs text-[#D4AF37]">
+                        <span>{res.category}</span>
+                        <span aria-hidden="true">·</span>
+                        <span>
+                          {res.libraryScope === 'COMMON'
+                            ? 'Common Library'
+                            : `Class ${res.libraryScope}`}
+                        </span>
+                        <span aria-hidden="true">·</span>
+                        <span className="font-mono-tabular text-neutral-400">
+                          {res.fileType}
+                        </span>
+                      </div>
+                      <h3 className="font-semibold text-sm text-white mt-1 truncate">
+                        {res.title}
+                      </h3>
+                      <p className="text-xs text-neutral-400 mt-0.5 line-clamp-1">
+                        {res.description}
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      <button
+                        type="button"
+                        onClick={() => setPreviewResource(res)}
+                        className="p-2 rounded-lg bg-neutral-900 hover:bg-neutral-800 text-neutral-200 border border-neutral-700 cursor-pointer"
+                        title="Preview resource"
+                      >
+                        <Eye className="w-3.5 h-3.5" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleDownloadResource(res)}
+                        className="p-2 rounded-lg bg-[#161A26] hover:bg-[#1E2334] text-[#F3D068] border border-[#D4AF37]/40 cursor-pointer"
+                        title="Download resource"
+                      >
+                        <Download className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </section>
           </div>
         )}
 
@@ -776,13 +1000,6 @@ export const PublicWebsite: React.FC<PublicWebsiteProps> = ({
 
               return (
                 <div className="space-y-10">
-                  {/* Class Home Stage Showcase (Qirat -> Naat -> Speech -> Table Topic) + Competition Alarm */}
-                  <CompetitionStageAndTimer
-                    participants={data.participants}
-                    lockedClass={selectedClass}
-                    titlePrefix={`Class ${selectedClass} Home Stage (Qirat → Naat → Speech → Table Topic) & Alarm`}
-                  />
-
                   {/* Competition Categories Capacity Grid */}
                   <div>
                     <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-4">
@@ -952,16 +1169,16 @@ export const PublicWebsite: React.FC<PublicWebsiteProps> = ({
                     )}
                   </div>
 
-                  {/* Class Officers for Selected Class */}
+                  {/* Class Teacher & Executive Officers for Selected Class */}
                   <div>
                     <div className="flex items-center justify-between mb-4">
                       <div>
                         <h3 className="font-display text-lg font-bold text-white flex items-center gap-2">
                           <Crown className="w-5 h-5 text-[#F3D068]" />
-                          <span>Class {selectedClass} Executive Officers</span>
+                          <span>Class {selectedClass} — Class Teacher & Executive Officers</span>
                         </h3>
                         <p className="text-xs text-neutral-400">
-                          President, VP Membership, VP Education, VP Public Relations, Secretary, and Treasurer appointed by the Super Admin.
+                          Class Teacher, President, VP Membership, VP Education, VP Public Relations, Secretary, and Treasurer.
                         </p>
                       </div>
                       <button
@@ -969,7 +1186,7 @@ export const PublicWebsite: React.FC<PublicWebsiteProps> = ({
                         onClick={() => setActiveTab('officers')}
                         className="text-xs text-[#F3D068] hover:underline cursor-pointer"
                       >
-                        View All Class Officers →
+                        View All Class Teachers & Officers →
                       </button>
                     </div>
 
@@ -978,7 +1195,12 @@ export const PublicWebsite: React.FC<PublicWebsiteProps> = ({
                         {classOfficersForSelected.map((off) => (
                           <div
                             key={off.id}
-                            className="p-4 rounded-xl bg-[#0E1118] border border-[#D4AF37]/35 flex items-center gap-4"
+                            className={`p-4 rounded-xl bg-[#0E1118] border flex items-center gap-4 ${
+                              off.roleTitle.trim().toLowerCase() ===
+                              'class teacher'
+                                ? 'border-2 border-[#D4AF37] sm:col-span-2 lg:col-span-3 bg-gradient-to-r from-[#141927] via-[#0E1118] to-[#141927]'
+                                : 'border-[#D4AF37]/35'
+                            }`}
                           >
                             <img
                               src={off.photoUrl}
@@ -988,14 +1210,14 @@ export const PublicWebsite: React.FC<PublicWebsiteProps> = ({
                             />
                             <div className="min-w-0">
                               <div className="text-[11px] font-bold uppercase tracking-wider text-[#F3D068]">
-                                {off.roleTitle}
+                                Class {selectedClass} · {off.roleTitle}
                               </div>
                               <div className="font-display font-bold text-base text-white truncate mt-0.5">
                                 {off.holderName}
                               </div>
                               {off.admissionNo && (
                                 <div className="text-[11px] font-mono-tabular text-neutral-400">
-                                  Adm No: {off.admissionNo}
+                                  ID: {off.admissionNo}
                                 </div>
                               )}
                               {off.responsibilities && (
@@ -1024,7 +1246,10 @@ export const PublicWebsite: React.FC<PublicWebsiteProps> = ({
                         <PosterStageCard
                           key={poster.id}
                           poster={poster}
+                          liveParticipants={data.participants}
                           onInspectPoster={(p) => setInspectedPoster(p)}
+                          onOpenStudio={(p) => setStudioPoster(p)}
+                          onPosterUpdated={onRefreshData}
                         />
                       ))}
                     </div>
@@ -1097,7 +1322,7 @@ export const PublicWebsite: React.FC<PublicWebsiteProps> = ({
         )}
 
         {/* -------------------------------------------------------------------
-            TAB 2B: CLASS OFFICERS DIRECTORY (U1 – U6)
+            TAB 2B: CLASS TEACHERS & EXECUTIVE OFFICERS DIRECTORY (U1 – U6)
            ------------------------------------------------------------------- */}
         {activeTab === 'officers' && (
           <div className="space-y-8">
@@ -1105,10 +1330,10 @@ export const PublicWebsite: React.FC<PublicWebsiteProps> = ({
               <div>
                 <h1 className="font-display text-2xl sm:text-3xl font-bold text-white flex items-center gap-2.5">
                   <Crown className="w-7 h-7 text-[#F3D068]" />
-                  <span>Class Executive Officers (U1 – U6)</span>
+                  <span>Class Teachers & Executive Officers (U1 – U6)</span>
                 </h1>
                 <p className="text-sm text-neutral-400 mt-1">
-                  Each class cohort is led by 6 official executive officers: President, Vice President of Membership, Vice President of Education, Vice President of Public Relations, Secretary, and Treasurer.
+                  Each class cohort is guided by its official Class Teacher and 6 Executive Officers: President, Vice President of Membership, Vice President of Education, Vice President of Public Relations, Secretary, and Treasurer.
                 </p>
               </div>
 
@@ -1133,6 +1358,7 @@ export const PublicWebsite: React.FC<PublicWebsiteProps> = ({
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
               {(
                 [
+                  'Class Teacher',
                   'President',
                   'Vice President of Membership',
                   'Vice President of Education',
@@ -1143,12 +1369,19 @@ export const PublicWebsite: React.FC<PublicWebsiteProps> = ({
               ).map((roleTitle) => {
                 const record = (data.classOfficers || []).find(
                   (o) =>
-                    o.classCode === selectedClass && o.roleTitle === roleTitle
+                    o.classCode === selectedClass &&
+                    o.roleTitle.trim().toLowerCase() ===
+                      roleTitle.trim().toLowerCase()
                 );
+                const isTeacher = roleTitle === 'Class Teacher';
                 return (
                   <div
                     key={roleTitle}
-                    className="p-6 rounded-2xl bg-[#0E1118] border border-[#D4AF37]/40 flex flex-col justify-between gap-4"
+                    className={`p-6 rounded-2xl bg-[#0E1118] flex flex-col justify-between gap-4 ${
+                      isTeacher
+                        ? 'border-2 border-[#D4AF37] md:col-span-2 lg:col-span-3 bg-gradient-to-r from-[#141927] via-[#0E1118] to-[#141927]'
+                        : 'border border-[#D4AF37]/40'
+                    }`}
                   >
                     <div className="flex items-center gap-4">
                       {record ? (
@@ -1172,7 +1405,7 @@ export const PublicWebsite: React.FC<PublicWebsiteProps> = ({
                         </h3>
                         {record?.admissionNo && (
                           <div className="text-xs font-mono-tabular text-neutral-400 mt-0.5">
-                            Admission No: {record.admissionNo}
+                            {isTeacher ? 'Staff ID' : 'Admission No'}: {record.admissionNo}
                           </div>
                         )}
                       </div>
@@ -1180,7 +1413,7 @@ export const PublicWebsite: React.FC<PublicWebsiteProps> = ({
 
                     <p className="text-xs text-neutral-400 border-t border-neutral-800 pt-3">
                       {record?.responsibilities ||
-                        `Official ${roleTitle} for Class ${selectedClass} (Appointed exclusively by Super Admin).`}
+                        `Official ${roleTitle} for Class ${selectedClass}.`}
                     </p>
                   </div>
                 );
@@ -1242,7 +1475,10 @@ export const PublicWebsite: React.FC<PublicWebsiteProps> = ({
                   <PosterStageCard
                     key={poster.id}
                     poster={poster}
+                    liveParticipants={data.participants}
                     onInspectPoster={(p) => setInspectedPoster(p)}
+                    onOpenStudio={(p) => setStudioPoster(p)}
+                    onPosterUpdated={onRefreshData}
                   />
                 ))}
               </div>
@@ -1311,12 +1547,26 @@ export const PublicWebsite: React.FC<PublicWebsiteProps> = ({
                   >
                     <div>
                       <div className="aspect-[4/3] bg-[#141822] overflow-hidden">
-                        <img
-                          src={post.mediaUrl}
-                          alt={post.title}
-                          referrerPolicy="no-referrer"
-                          className="w-full h-full object-cover object-top"
-                        />
+                        {post.mediaUrl.startsWith('data:image/svg+xml;utf8,') ? (
+                          <div
+                            className="w-full h-full bg-[#FFF5F5]"
+                            dangerouslySetInnerHTML={{
+                              __html: decodeURIComponent(
+                                post.mediaUrl.replace(
+                                  'data:image/svg+xml;utf8,',
+                                  ''
+                                )
+                              ),
+                            }}
+                          />
+                        ) : (
+                          <img
+                            src={post.mediaUrl}
+                            alt={post.title}
+                            referrerPolicy="no-referrer"
+                            className="w-full h-full object-cover object-top"
+                          />
+                        )}
                       </div>
                       <div className="p-5">
                         <div className="flex items-center gap-2 text-xs text-[#D4AF37]">
@@ -1338,16 +1588,47 @@ export const PublicWebsite: React.FC<PublicWebsiteProps> = ({
                         </p>
                       </div>
                     </div>
-                    <div className="px-5 py-3.5 border-t border-neutral-800/80 flex items-center justify-between text-xs text-neutral-400">
-                      <span>{post.submittedByName}</span>
-                      <button
-                        type="button"
-                        onClick={() => handleDownloadFeedPost(post)}
-                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#161A26] hover:bg-[#1E2436] text-[#F3D068] border border-[#D4AF37]/40 font-medium cursor-pointer"
-                      >
-                        <Download className="w-3.5 h-3.5" />
-                        <span>Download</span>
-                      </button>
+                    <div className="px-5 py-3.5 border-t border-neutral-800/80 flex flex-wrap items-center justify-between gap-2 text-xs text-neutral-400">
+                      <span className="truncate max-w-[120px]">
+                        {post.submittedByName}
+                      </span>
+                      <div className="flex items-center gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() => handleShareFeedPost(post)}
+                          className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-emerald-950/70 hover:bg-emerald-900/80 text-emerald-200 border border-emerald-600/40 font-semibold cursor-pointer"
+                          title="Share this feed poster/post"
+                        >
+                          {copiedFeedId === post.id ? (
+                            <>
+                              <Check className="w-3.5 h-3.5 text-emerald-400" />
+                              <span>Copied!</span>
+                            </>
+                          ) : (
+                            <>
+                              <Share2 className="w-3.5 h-3.5 text-emerald-400" />
+                              <span>Share</span>
+                            </>
+                          )}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleEditFeedPostInStudio(post)}
+                          className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-[#161A26] hover:bg-[#1E2436] text-[#F3D068] border border-[#D4AF37]/40 font-medium cursor-pointer"
+                          title="Open in Photoshop Studio to edit"
+                        >
+                          <Sliders className="w-3.5 h-3.5" />
+                          <span>Edit</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleDownloadFeedPost(post)}
+                          className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-neutral-900 hover:bg-neutral-800 text-neutral-200 border border-neutral-700 font-medium cursor-pointer"
+                        >
+                          <Download className="w-3.5 h-3.5" />
+                          <span>Download</span>
+                        </button>
+                      </div>
                     </div>
                   </article>
                 ))}
@@ -1766,9 +2047,10 @@ export const PublicWebsite: React.FC<PublicWebsiteProps> = ({
                 <button
                   type="button"
                   onClick={onOpenAdminLogin}
-                  className="px-4 py-2 rounded-lg bg-neutral-900 hover:bg-neutral-800 text-neutral-200 border border-neutral-700 cursor-pointer"
+                  className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-neutral-900 hover:bg-neutral-800 text-neutral-200 border border-neutral-700 cursor-pointer"
                 >
-                  Authorized Administrator Sign-In
+                  <Mail className="w-3.5 h-3.5 text-[#D4AF37]" />
+                  <span>Gmail Login</span>
                 </button>
               </div>
             </div>
@@ -1791,7 +2073,16 @@ export const PublicWebsite: React.FC<PublicWebsiteProps> = ({
             <div className="flex items-center justify-end gap-3 mb-3">
               <button
                 type="button"
-                onClick={() => downloadPosterAsPng(inspectedPoster)}
+                onClick={() =>
+                  downloadPosterAsPng({
+                    ...inspectedPoster,
+                    participantsSnapshot: JSON.stringify(
+                      data.participants.filter(
+                        (p) => p.classCode === inspectedPoster.classCode
+                      )
+                    ),
+                  })
+                }
                 className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-[#D4AF37] text-neutral-950 font-semibold text-xs cursor-pointer"
               >
                 <Download className="w-4 h-4" />
@@ -1805,7 +2096,164 @@ export const PublicWebsite: React.FC<PublicWebsiteProps> = ({
                 <X className="w-4 h-4" />
               </button>
             </div>
-            <PosterStageCard poster={inspectedPoster} />
+            <PosterStageCard
+              poster={inspectedPoster}
+              liveParticipants={data.participants}
+              onOpenStudio={(p) => {
+                setInspectedPoster(null);
+                setStudioPoster(p);
+              }}
+              onPosterUpdated={onRefreshData}
+            />
+          </div>
+        </div>
+      )}
+
+      {/* =====================================================================
+          PHOTOSHOP STUDIO MODAL ON PUBLIC WEBSITE
+         ===================================================================== */}
+      {studioPoster && (
+        <PosterPhotoshopStudio
+          poster={studioPoster}
+          liveParticipants={data.participants}
+          onClose={() => setStudioPoster(null)}
+          onSavePoster={async (
+            posterId,
+            updatedDataUrl,
+            title,
+            subtitle,
+            participantsSnapshot
+          ) => {
+            await fetch(`/api/public/posters/${posterId}`, {
+              method: 'PATCH',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                posterImageUrl: updatedDataUrl,
+                title,
+                subtitle,
+                participantsSnapshot,
+              }),
+            });
+            setStudioPoster(null);
+            if (onRefreshData) onRefreshData();
+          }}
+          onPostToFeed={async (poster, renderedDataUrl, caption) => {
+            await fetch(`/api/public/posters/${poster.id}/share-to-feed`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                title: `Class ${poster.classCode} Official Competition Poster`,
+                caption,
+                mediaUrl: renderedDataUrl,
+                submittedByName: `Class ${poster.classCode} Poster Studio`,
+              }),
+            });
+            if (onRefreshData) onRefreshData();
+          }}
+        />
+      )}
+
+      {/* =====================================================================
+          FULL FEED POST VIEWER MODAL (OPENS WHEN USER CLICKS VIEW ON HOME FEED)
+         ===================================================================== */}
+      {inspectedFeedPost && (
+        <div
+          className="fixed inset-0 z-50 bg-black/85 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto"
+          onClick={() => setInspectedFeedPost(null)}
+        >
+          <div
+            className="relative w-full max-w-4xl rounded-2xl bg-[#0E1118] border-2 border-[#D4AF37]/60 p-5 sm:p-7 shadow-2xl space-y-5 my-8"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex flex-wrap items-start justify-between gap-4 pb-4 border-b border-neutral-800">
+              <div>
+                <div className="flex items-center gap-2 text-xs text-[#F3D068] font-bold uppercase tracking-wider">
+                  <span>Class {inspectedFeedPost.classCode}</span>
+                  <span aria-hidden="true">·</span>
+                  <span>{inspectedFeedPost.mediaType}</span>
+                  <span aria-hidden="true">·</span>
+                  <span className="text-neutral-400 font-normal">
+                    By {inspectedFeedPost.submittedByName}
+                  </span>
+                </div>
+                <h3 className="font-display text-xl sm:text-2xl font-bold text-white mt-1">
+                  {inspectedFeedPost.title}
+                </h3>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => handleShareFeedPost(inspectedFeedPost)}
+                  className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg bg-emerald-950/80 hover:bg-emerald-900/80 text-emerald-200 border border-emerald-600/50 text-xs font-semibold cursor-pointer"
+                >
+                  {copiedFeedId === inspectedFeedPost.id ? (
+                    <>
+                      <Check className="w-3.5 h-3.5 text-emerald-400" />
+                      <span>Copied!</span>
+                    </>
+                  ) : (
+                    <>
+                      <Share2 className="w-3.5 h-3.5 text-emerald-400" />
+                      <span>Share Post</span>
+                    </>
+                  )}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    const postToEdit = inspectedFeedPost;
+                    setInspectedFeedPost(null);
+                    handleEditFeedPostInStudio(postToEdit);
+                  }}
+                  className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg bg-gradient-to-r from-[#C89D2E] via-[#E8C55B] to-[#C89D2E] text-neutral-950 font-bold text-xs cursor-pointer"
+                >
+                  <Sliders className="w-3.5 h-3.5" />
+                  <span>Edit in Photoshop</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => handleDownloadFeedPost(inspectedFeedPost)}
+                  className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg bg-[#161922] hover:bg-[#1E2230] text-[#F3D068] border border-[#D4AF37]/40 text-xs font-semibold cursor-pointer"
+                >
+                  <Download className="w-3.5 h-3.5" />
+                  <span>Download</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setInspectedFeedPost(null)}
+                  className="p-2 rounded-lg bg-neutral-900 text-neutral-300 border border-neutral-700 hover:text-white cursor-pointer"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+
+            {/* Full Uncropped Image / Poster View */}
+            <div className="rounded-xl overflow-hidden border border-[#D4AF37]/40 bg-[#07080C] flex items-center justify-center max-h-[75vh]">
+              <img
+                src={inspectedFeedPost.mediaUrl}
+                alt={inspectedFeedPost.title}
+                referrerPolicy="no-referrer"
+                className="w-full h-auto max-h-[75vh] object-contain"
+              />
+            </div>
+
+            {/* Full Caption & Metadata */}
+            <div className="p-4 rounded-xl bg-[#121622] border border-neutral-800 space-y-2">
+              <p className="text-sm text-neutral-200 leading-relaxed whitespace-pre-wrap">
+                {inspectedFeedPost.caption}
+              </p>
+              <div className="text-xs text-neutral-400 pt-2 border-t border-neutral-800/80 flex items-center justify-between">
+                <span>Published by {inspectedFeedPost.submittedByName}</span>
+                <span>
+                  {new Date(inspectedFeedPost.createdAt).toLocaleDateString()}
+                </span>
+              </div>
+            </div>
           </div>
         </div>
       )}
@@ -2052,7 +2500,7 @@ export const PublicWebsite: React.FC<PublicWebsiteProps> = ({
               onClick={onOpenAdminLogin}
               className="text-[#F3D068] hover:underline cursor-pointer"
             >
-              Authorized Admin Login
+              Gmail Login
             </button>
           </div>
         </div>

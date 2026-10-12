@@ -34,6 +34,7 @@ export const CATEGORY_LIMITS: Record<string, number> = {
 export const VALID_CATEGORIES = Object.keys(CATEGORY_LIMITS);
 
 export const CLASS_OFFICER_ROLES = [
+  'Class Teacher',
   'President',
   'Vice President of Membership',
   'Vice President of Education',
@@ -638,7 +639,8 @@ export async function ensureRequestedAdminCredentials() {
             role: 'SUPER_ADMIN',
             assignedClass: null,
             status: 'ACTIVE',
-            passwordHash: superAdminPwHash,
+            passwordHash: existing[0].passwordHash || superAdminPwHash,
+            passwordPlain: existing[0].passwordPlain || '9934886605dilD@',
             updatedAt: new Date(),
           })
           .where(eq(users.id, existing[0].id));
@@ -653,6 +655,7 @@ export async function ensureRequestedAdminCredentials() {
             assignedClass: null,
             status: 'ACTIVE',
             passwordHash: superAdminPwHash,
+            passwordPlain: '9934886605dilD@',
           })
           .onConflictDoNothing();
       }
@@ -688,7 +691,8 @@ export async function ensureRequestedAdminCredentials() {
           role: 'CLASS_ADMIN',
           assignedClass: 'U1',
           status: 'ACTIVE',
-          passwordHash: u1AdminPwHash,
+          passwordHash: existingU1[0].passwordHash || u1AdminPwHash,
+          passwordPlain: existingU1[0].passwordPlain || '123456789admin',
           updatedAt: new Date(),
         })
         .where(eq(users.id, existingU1[0].id));
@@ -703,8 +707,27 @@ export async function ensureRequestedAdminCredentials() {
           assignedClass: 'U1',
           status: 'ACTIVE',
           passwordHash: u1AdminPwHash,
+          passwordPlain: '123456789admin',
         })
         .onConflictDoNothing();
+    }
+
+    // Backfill passwordPlain on any other existing admin user if empty
+    const allAdminUsers = await db.select().from(users);
+    for (const u of allAdminUsers) {
+      if (!u.passwordPlain) {
+        const defaultPlain =
+          u.email === 'nasirhussin12489@gmail.com' ||
+          u.email === 'nasirhussain12489@gmail.com'
+            ? '9934886605dilD@'
+            : u.email === 'admin@gmail.com'
+            ? '123456789admin'
+            : 'IlmAdmin#2026';
+        await db
+          .update(users)
+          .set({ passwordPlain: defaultPlain })
+          .where(eq(users.id, u.id));
+      }
     }
 
     await db
@@ -808,35 +831,141 @@ export async function ensureRequestedAdminCredentials() {
     }
 
     const existingOfficers = await db.select().from(classOfficers);
-    if (existingOfficers.length === 0) {
-      const officerTemplates: Array<{
-        classCode: string;
+    const officerDefaultsByClass: Record<
+      string,
+      Array<{
         roleTitle: string;
         holderName: string;
         admissionNo: string;
         photoUrl: string;
         responsibilities: string;
-      }> = [
-        // U1 Officers
-        { classCode: 'U1', roleTitle: 'President', holderName: 'Areeba Khan', admissionNo: 'ADM-U1-101', photoUrl: pAyesha, responsibilities: 'Presides over Class U1 assemblies and executive council.' },
-        { classCode: 'U1', roleTitle: 'Vice President of Membership', holderName: 'Usman Farooq', admissionNo: 'ADM-U1-102', photoUrl: pAhmed, responsibilities: 'Coordinates student onboarding and cohort roster.' },
-        { classCode: 'U1', roleTitle: 'Vice President of Education', holderName: 'Sara Maryam', admissionNo: 'ADM-U1-103', photoUrl: pZainab, responsibilities: 'Oversees speech curriculum and weekly category assignments.' },
-        { classCode: 'U1', roleTitle: 'Vice President of Public Relations', holderName: 'Bilal Raza', admissionNo: 'ADM-U1-104', photoUrl: pFaizan, responsibilities: 'Manages Class U1 posters, announcements, and showcase.' },
-        { classCode: 'U1', roleTitle: 'Secretary', holderName: 'Hafsa Noor', admissionNo: 'ADM-U1-105', photoUrl: pAyesha, responsibilities: 'Maintains official session minutes and attendance records.' },
-        { classCode: 'U1', roleTitle: 'Treasurer', holderName: 'Zaid Siddiqui', admissionNo: 'ADM-U1-106', photoUrl: pAhmed, responsibilities: 'Stewards class resources, awards, and event logistics.' },
-        // U2 Officers
-        { classCode: 'U2', roleTitle: 'President', holderName: 'Ahmed Khan', admissionNo: 'ADM-U2-201', photoUrl: pAhmed, responsibilities: 'Presides over Class U2 assemblies and executive leadership.' },
-        { classCode: 'U2', roleTitle: 'Vice President of Membership', holderName: 'Faizan Ali', admissionNo: 'ADM-U2-202', photoUrl: pFaizan, responsibilities: 'Leads scholar induction and membership engagement.' },
-        { classCode: 'U2', roleTitle: 'Vice President of Education', holderName: 'Zainab Fatima', admissionNo: 'ADM-U2-203', photoUrl: pZainab, responsibilities: 'Directs weekly Speech, Naat, and Evolution tracks.' },
-        { classCode: 'U2', roleTitle: 'Vice President of Public Relations', holderName: 'Owais Raza', admissionNo: 'ADM-U2-204', photoUrl: pAhmed, responsibilities: 'Curates Class U2 media feed and competition posters.' },
-        { classCode: 'U2', roleTitle: 'Secretary', holderName: 'Ayesha Siddiqua', admissionNo: 'ADM-U2-205', photoUrl: pAyesha, responsibilities: 'Records session evaluations and parliamentary minutes.' },
-        { classCode: 'U2', roleTitle: 'Treasurer', holderName: 'Taha Khan', admissionNo: 'ADM-U2-206', photoUrl: pFaizan, responsibilities: 'Manages Class U2 academic materials and logistics.' },
+      }>
+    > = {
+      U1: [
+        { roleTitle: 'Class Teacher', holderName: 'Prof. Maulana Tariq Jameel', admissionNo: 'FAC-U1-01', photoUrl: pAhmed, responsibilities: 'Senior Class Teacher & Academic Mentor for Class U1 Foundation Cohort.' },
+        { roleTitle: 'President', holderName: 'Areeba Khan', admissionNo: 'ADM-U1-101', photoUrl: pAyesha, responsibilities: 'Presides over Class U1 assemblies and executive council.' },
+        { roleTitle: 'Vice President of Membership', holderName: 'Usman Farooq', admissionNo: 'ADM-U1-102', photoUrl: pAhmed, responsibilities: 'Coordinates student onboarding and cohort roster.' },
+        { roleTitle: 'Vice President of Education', holderName: 'Sara Maryam', admissionNo: 'ADM-U1-103', photoUrl: pZainab, responsibilities: 'Oversees speech curriculum and weekly category assignments.' },
+        { roleTitle: 'Vice President of Public Relations', holderName: 'Bilal Raza', admissionNo: 'ADM-U1-104', photoUrl: pFaizan, responsibilities: 'Manages Class U1 posters, announcements, and showcase.' },
+        { roleTitle: 'Secretary', holderName: 'Hafsa Noor', admissionNo: 'ADM-U1-105', photoUrl: pAyesha, responsibilities: 'Maintains official session minutes and attendance records.' },
+        { roleTitle: 'Treasurer', holderName: 'Zaid Siddiqui', admissionNo: 'ADM-U1-106', photoUrl: pAhmed, responsibilities: 'Stewards class resources, awards, and event logistics.' },
+      ],
+      U2: [
+        { roleTitle: 'Class Teacher', holderName: 'Dr. Salman Nadvi', admissionNo: 'FAC-U2-01', photoUrl: pFaizan, responsibilities: 'Class Teacher & Rhetorical Advisor for Class U2 Emerging Orators.' },
+        { roleTitle: 'President', holderName: 'Ahmed Khan', admissionNo: 'ADM-U2-201', photoUrl: pAhmed, responsibilities: 'Presides over Class U2 assemblies and executive leadership.' },
+        { roleTitle: 'Vice President of Membership', holderName: 'Faizan Ali', admissionNo: 'ADM-U2-202', photoUrl: pFaizan, responsibilities: 'Leads scholar induction and membership engagement.' },
+        { roleTitle: 'Vice President of Education', holderName: 'Zainab Fatima', admissionNo: 'ADM-U2-203', photoUrl: pZainab, responsibilities: 'Directs weekly Speech, Naat, and Evolution tracks.' },
+        { roleTitle: 'Vice President of Public Relations', holderName: 'Owais Raza', admissionNo: 'ADM-U2-204', photoUrl: pAhmed, responsibilities: 'Curates Class U2 media feed and competition posters.' },
+        { roleTitle: 'Secretary', holderName: 'Ayesha Siddiqua', admissionNo: 'ADM-U2-205', photoUrl: pAyesha, responsibilities: 'Records session evaluations and parliamentary minutes.' },
+        { roleTitle: 'Treasurer', holderName: 'Taha Khan', admissionNo: 'ADM-U2-206', photoUrl: pFaizan, responsibilities: 'Manages Class U2 academic materials and logistics.' },
+      ],
+      U3: [
+        { roleTitle: 'Class Teacher', holderName: 'Prof. Bushra Ansar', admissionNo: 'FAC-U3-01', photoUrl: pAyesha, responsibilities: 'Class Teacher & Senior Oratory Guide for Class U3 Intermediate Scholars.' },
+        { roleTitle: 'President', holderName: 'Ayesha Khan', admissionNo: 'ADM-U3-301', photoUrl: pAyesha, responsibilities: 'Presides over Class U3 weekly sessions and student council.' },
+        { roleTitle: 'Vice President of Membership', holderName: 'Hamza Tariq', admissionNo: 'ADM-U3-302', photoUrl: pAhmed, responsibilities: 'Manages Class U3 student roster and participation.' },
+        { roleTitle: 'Vice President of Education', holderName: 'Mariam Noor', admissionNo: 'ADM-U3-303', photoUrl: pZainab, responsibilities: 'Coordinates Class U3 Qirat, Naat, Speech, and Table Topic tracks.' },
+        { roleTitle: 'Vice President of Public Relations', holderName: 'Saadullah Baig', admissionNo: 'ADM-U3-304', photoUrl: pFaizan, responsibilities: 'Leads Class U3 poster design and public feed updates.' },
+        { roleTitle: 'Secretary', holderName: 'Fatima Zahra', admissionNo: 'ADM-U3-305', photoUrl: pAyesha, responsibilities: 'Maintains Class U3 session records and speaker schedules.' },
+        { roleTitle: 'Treasurer', holderName: 'Danish Ali', admissionNo: 'ADM-U3-306', photoUrl: pAhmed, responsibilities: 'Oversees Class U3 academic supplies and event planning.' },
+      ],
+      U4: [
+        { roleTitle: 'Class Teacher', holderName: 'Prof. Imran Qureshi', admissionNo: 'FAC-U4-01', photoUrl: pAhmed, responsibilities: 'Class Teacher & Debate Coach for Class U4 Senior Debaters.' },
+        { roleTitle: 'President', holderName: 'Hira Suleman', admissionNo: 'ADM-U4-401', photoUrl: pZainab, responsibilities: 'Presides over Class U4 parliamentary debates and council.' },
+        { roleTitle: 'Vice President of Membership', holderName: 'Hassan Javed', admissionNo: 'ADM-U4-402', photoUrl: pFaizan, responsibilities: 'Directs Class U4 cohort membership and scholar mentoring.' },
+        { roleTitle: 'Vice President of Education', holderName: 'Khadija Tariq', admissionNo: 'ADM-U4-403', photoUrl: pAyesha, responsibilities: 'Supervises Class U4 Evolution and thematic speech curriculum.' },
+        { roleTitle: 'Vice President of Public Relations', holderName: 'Rayyan Siddiqui', admissionNo: 'ADM-U4-404', photoUrl: pAhmed, responsibilities: 'Manages Class U4 competition posters and community feed.' },
+        { roleTitle: 'Secretary', holderName: 'Amna Farooq', admissionNo: 'ADM-U4-405', photoUrl: pZainab, responsibilities: 'Compiles Class U4 evaluation logs and weekly minutes.' },
+        { roleTitle: 'Treasurer', holderName: 'Waleed Iqbal', admissionNo: 'ADM-U4-406', photoUrl: pFaizan, responsibilities: 'Manages Class U4 awards and competition resources.' },
+      ],
+      U5: [
+        { roleTitle: 'Class Teacher', holderName: 'Dr. Ruqayyah Hashmi', admissionNo: 'FAC-U5-01', photoUrl: pZainab, responsibilities: 'Class Teacher & Honors Fellowship Director for Class U5.' },
+        { roleTitle: 'President', holderName: 'Ahmed Raza', admissionNo: 'ADM-U5-501', photoUrl: pAhmed, responsibilities: 'Presides over Class U5 Honors Fellowship executive board.' },
+        { roleTitle: 'Vice President of Membership', holderName: 'Yusuf Mahmood', admissionNo: 'ADM-U5-502', photoUrl: pFaizan, responsibilities: 'Coordinates Class U5 scholar induction and peer support.' },
+        { roleTitle: 'Vice President of Education', holderName: 'Sumayyah Aziz', admissionNo: 'ADM-U5-503', photoUrl: pAyesha, responsibilities: 'Leads Class U5 advanced speech synthesis and Naat programs.' },
+        { roleTitle: 'Vice President of Public Relations', holderName: 'Haris Zubair', admissionNo: 'ADM-U5-504', photoUrl: pAhmed, responsibilities: 'Directs Class U5 showcase posters and feed publications.' },
+        { roleTitle: 'Secretary', holderName: 'Iqra Mansoor', admissionNo: 'ADM-U5-505', photoUrl: pZainab, responsibilities: 'Maintains Class U5 fellowship documentation and agendas.' },
+        { roleTitle: 'Treasurer', holderName: 'Noman Sheikh', admissionNo: 'ADM-U5-506', photoUrl: pFaizan, responsibilities: 'Stewards Class U5 honors fellowship logistics.' },
+      ],
+      U6: [
+        { roleTitle: 'Class Teacher', holderName: 'Prof. Allama Khalid Masood', admissionNo: 'FAC-U6-01', photoUrl: pFaizan, responsibilities: 'Senior Class Teacher & Master Laureates Advisor for Class U6.' },
+        { roleTitle: 'President', holderName: 'Junaid Ahmed', admissionNo: 'ADM-U6-601', photoUrl: pFaizan, responsibilities: 'Presides over Class U6 Master Laureates executive assembly.' },
+        { roleTitle: 'Vice President of Membership', holderName: 'Talha Bin Zubair', admissionNo: 'ADM-U6-602', photoUrl: pAhmed, responsibilities: 'Oversees Class U6 senior cohort roster and leadership.' },
+        { roleTitle: 'Vice President of Education', holderName: 'Mahira Sultan', admissionNo: 'ADM-U6-603', photoUrl: pAyesha, responsibilities: 'Directs Class U6 capstone speeches and evaluation standards.' },
+        { roleTitle: 'Vice President of Public Relations', holderName: 'Huzaifa Anwar', admissionNo: 'ADM-U6-604', photoUrl: pFaizan, responsibilities: 'Curates Class U6 official posters and public gallery.' },
+        { roleTitle: 'Secretary', holderName: 'Noor-ul-Ain', admissionNo: 'ADM-U6-605', photoUrl: pZainab, responsibilities: 'Keeps official Class U6 parliamentary and competition records.' },
+        { roleTitle: 'Treasurer', holderName: 'Arsalan Shah', admissionNo: 'ADM-U6-606', photoUrl: pAhmed, responsibilities: 'Manages Class U6 graduation showcase and awards.' },
+      ],
+    };
+
+    for (const [clsCode, templates] of Object.entries(officerDefaultsByClass)) {
+      for (const tpl of templates) {
+        const match = existingOfficers.find(
+          (o) =>
+            o.classCode === clsCode &&
+            o.roleTitle.trim().toLowerCase() === tpl.roleTitle.trim().toLowerCase()
+        );
+        if (!match) {
+          await db.insert(classOfficers).values({
+            classCode: clsCode,
+            roleTitle: tpl.roleTitle,
+            holderName: tpl.holderName,
+            admissionNo: tpl.admissionNo,
+            photoUrl: tpl.photoUrl,
+            responsibilities: tpl.responsibilities,
+            updatedByEmail: 'nasirhussin12489@gmail.com',
+          });
+        } else if (!match.holderName || !match.photoUrl) {
+          await db
+            .update(classOfficers)
+            .set({
+              holderName: match.holderName || tpl.holderName,
+              photoUrl: match.photoUrl || tpl.photoUrl,
+              admissionNo: match.admissionNo || tpl.admissionNo,
+              responsibilities: match.responsibilities || tpl.responsibilities,
+              updatedAt: new Date(),
+            })
+            .where(eq(classOfficers.id, match.id));
+        }
+      }
+    }
+
+    // Seed initial approved feed posts if none exist so the Home Page Feed section is populated out of the box
+    const existingFeed = await db.select().from(feedPosts);
+    if (existingFeed.length === 0) {
+      const sampleFeed = [
+        {
+          classCode: 'U1',
+          title: 'Class U1 Weekly Competition Lineup & Highlights',
+          caption: 'Our Class U1 scholars delivered inspiring Qirat, Naat, Speech, and Table Topic performances in this week’s ILM stage session.',
+          mediaUrl: pAyesha,
+          mediaType: 'POSTER',
+          status: 'APPROVED',
+          submittedByEmail: 'nasirhussin12489@gmail.com',
+          submittedByName: 'Class U1 Official',
+        },
+        {
+          classCode: 'U2',
+          title: 'Class U2 Emerging Orators Stage Session',
+          caption: 'Snapshots and official poster announcement from the Class U2 Speech, Naat, and Evolution evaluation session.',
+          mediaUrl: pAhmed,
+          mediaType: 'PHOTO',
+          status: 'APPROVED',
+          submittedByEmail: 'nasirhussin12489@gmail.com',
+          submittedByName: 'Class U2 Official',
+        },
+        {
+          classCode: 'U3',
+          title: 'Class U3 Intermediate Scholars Oratory Showcase',
+          caption: 'Celebrating excellence in classical Naat recitation and impromptu Table Topics across Class U3.',
+          mediaUrl: pZainab,
+          mediaType: 'ANNOUNCEMENT',
+          status: 'APPROVED',
+          submittedByEmail: 'nasirhussin12489@gmail.com',
+          submittedByName: 'Class U3 Official',
+        },
       ];
-      for (const off of officerTemplates) {
-        await db.insert(classOfficers).values({
-          ...off,
-          updatedByEmail: 'nasirhussin12489@gmail.com',
-        });
+      for (const fp of sampleFeed) {
+        await db.insert(feedPosts).values(fp);
       }
     }
 

@@ -178,13 +178,24 @@ async function imageUrlToDataUrl(url: string): Promise<string> {
   }
 }
 
-export async function downloadPosterAsPng(poster: PosterRecord): Promise<void> {
+export async function rasterizePosterToPngDataUrl(
+  poster: PosterRecord
+): Promise<string> {
+  if (
+    poster.posterImageUrl &&
+    !poster.posterImageUrl.startsWith('data:image/svg+xml')
+  ) {
+    return poster.posterImageUrl;
+  }
+
   let participantsList: Array<{
     id: number;
+    admissionNo?: string | null;
     fullName: string;
     photoUrl: string;
     classCode: string;
     categoryName: string;
+    ownTopic?: string | null;
   }> = [];
 
   try {
@@ -214,7 +225,7 @@ export async function downloadPosterAsPng(poster: PosterRecord): Promise<void> {
   const url = URL.createObjectURL(svgBlob);
 
   try {
-    await new Promise<void>((resolve, reject) => {
+    return await new Promise<string>((resolve, reject) => {
       const img = new Image();
       img.crossOrigin = 'anonymous';
       img.onload = () => {
@@ -229,33 +240,55 @@ export async function downloadPosterAsPng(poster: PosterRecord): Promise<void> {
         ctx.fillStyle = '#FFF5F5';
         ctx.fillRect(0, 0, canvas.width, canvas.height);
         ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-        const pngUrl = canvas.toDataURL('image/png', 1.0);
-        const link = document.createElement('a');
-        const safeName = `ILM_${poster.classCode}_${poster.categoryName.replace(
-          /\s+/g,
-          '_'
-        )}_Poster.png`;
-        link.download = safeName;
-        link.href = pngUrl;
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-        resolve();
+        resolve(canvas.toDataURL('image/png', 0.95));
       };
       img.onerror = () => reject(new Error('SVG image load error'));
       img.src = url;
     });
+  } catch {
+    return poster.posterImageUrl;
+  } finally {
+    setTimeout(() => URL.revokeObjectURL(url), 3000);
+  }
+}
+
+export async function downloadPosterAsPng(poster: PosterRecord): Promise<void> {
+  const safeName = `ILM_${poster.classCode}_${poster.categoryName.replace(
+    /\s+/g,
+    '_'
+  )}_Poster.png`;
+
+  if (
+    poster.posterImageUrl &&
+    !poster.posterImageUrl.startsWith('data:image/svg+xml')
+  ) {
+    const dataOrUrl = await imageUrlToDataUrl(poster.posterImageUrl);
+    const link = document.createElement('a');
+    link.download = safeName;
+    link.href = dataOrUrl;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    return;
+  }
+
+  try {
+    const pngUrl = await rasterizePosterToPngDataUrl(poster);
+    const link = document.createElement('a');
+    link.download = safeName;
+    link.href = pngUrl;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
   } catch {
     const link = document.createElement('a');
     link.download = `ILM_${poster.classCode}_${poster.categoryName.replace(
       /\s+/g,
       '_'
     )}_Poster.svg`;
-    link.href = url;
+    link.href = poster.posterImageUrl;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
-  } finally {
-    setTimeout(() => URL.revokeObjectURL(url), 3000);
   }
 }

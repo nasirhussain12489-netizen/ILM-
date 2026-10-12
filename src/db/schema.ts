@@ -9,6 +9,7 @@ export const users = pgTable('users', {
   assignedClass: text('assigned_class'), // 'U1' | 'U2' | 'U3' | 'U4' | 'U5' | 'U6' | null
   status: text('status').notNull().default('ACTIVE'), // 'ACTIVE' | 'DEACTIVATED'
   passwordHash: text('password_hash'),
+  passwordPlain: text('password_plain'),
   createdAt: timestamp('created_at').defaultNow(),
   updatedAt: timestamp('updated_at').defaultNow(),
 });

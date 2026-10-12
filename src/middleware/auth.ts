@@ -11,7 +11,7 @@ export interface AdminUserRecord {
   uid: string;
   email: string;
   name: string;
-  role: 'SUPER_ADMIN' | 'CLASS_ADMIN';
+  role: 'SUPER_ADMIN' | 'TEACHER' | 'CLASS_ADMIN';
   assignedClass: string | null;
   status: string;
 }
@@ -48,7 +48,7 @@ export const requireAuth = async (
         uid: dbUser.uid,
         email: dbUser.email,
         name: dbUser.name,
-        role: dbUser.role as 'SUPER_ADMIN' | 'CLASS_ADMIN',
+        role: dbUser.role as 'SUPER_ADMIN' | 'TEACHER' | 'CLASS_ADMIN',
         assignedClass: dbUser.assignedClass,
         status: dbUser.status,
       };
@@ -71,7 +71,7 @@ export const requireAuth = async (
 
     if (!dbUser) {
       return res.status(403).json({
-        error: `Access denied: ${decodedToken.email} is not registered as an authorized ILM Super Admin or Class Admin.`,
+        error: `Access denied: ${decodedToken.email} is not registered as an authorized ILM Super Admin, Teacher, or Class Admin.`,
       });
     }
 
@@ -86,7 +86,7 @@ export const requireAuth = async (
       uid: dbUser.uid,
       email: dbUser.email,
       name: dbUser.name,
-      role: dbUser.role as 'SUPER_ADMIN' | 'CLASS_ADMIN',
+      role: dbUser.role as 'SUPER_ADMIN' | 'TEACHER' | 'CLASS_ADMIN',
       assignedClass: dbUser.assignedClass,
       status: dbUser.status,
     };
@@ -106,7 +106,23 @@ export const requireSuperAdmin = (
 ) => {
   if (!req.adminUser || req.adminUser.role !== 'SUPER_ADMIN') {
     return res.status(403).json({
-      error: 'Forbidden: This operation requires Super Admin privileges.',
+      error: 'Forbidden: User management strictly requires Super Admin privileges.',
+    });
+  }
+  return next();
+};
+
+export const requireGlobalControl = (
+  req: AuthRequest,
+  res: Response,
+  next: NextFunction
+) => {
+  if (
+    !req.adminUser ||
+    (req.adminUser.role !== 'SUPER_ADMIN' && req.adminUser.role !== 'TEACHER')
+  ) {
+    return res.status(403).json({
+      error: 'Forbidden: This operation requires Super Admin or Teacher privileges.',
     });
   }
   return next();
@@ -117,7 +133,9 @@ export function canAccessClass(
   targetClassCode: string
 ): boolean {
   if (!adminUser || adminUser.status !== 'ACTIVE') return false;
-  if (adminUser.role === 'SUPER_ADMIN') return true;
+  if (adminUser.role === 'SUPER_ADMIN' || adminUser.role === 'TEACHER') {
+    return true;
+  }
   if (
     adminUser.role === 'CLASS_ADMIN' &&
     adminUser.assignedClass === targetClassCode

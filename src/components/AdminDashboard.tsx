@@ -99,6 +99,7 @@ const TOTAL_CLASS_CAPACITY = Object.values(CATEGORY_MAX).reduce(
 );
 
 const CLASS_OFFICER_ROLES: ClassOfficerRole[] = [
+  'Class Teacher',
   'President',
   'Vice President of Membership',
   'Vice President of Education',
@@ -293,11 +294,26 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   );
   const [uAssignedClass, setUAssignedClass] = useState<ClassCode>('U1');
   const [uPassword, setUPassword] = useState('IlmAdmin#2026');
-  const [uReplaceExisting, setUReplaceExisting] = useState(false);
+  const [uReplaceExisting, setUReplaceExisting] = useState(true);
+  const [editingUser, setEditingUser] = useState<AdminUser | null>(null);
+  const [editUserName, setEditUserName] = useState('');
+  const [editUserEmail, setEditUserEmail] = useState('');
+  const [editUserPassword, setEditUserPassword] = useState('');
+  const [editUserRole, setEditUserRole] = useState<
+    'SUPER_ADMIN' | 'CLASS_ADMIN'
+  >('CLASS_ADMIN');
+  const [editUserClass, setEditUserClass] = useState<ClassCode>('U1');
 
   // Confirm delete dialog state
   const [confirmDelete, setConfirmDelete] = useState<{
-    type: 'participant' | 'feed' | 'result' | 'library' | 'student' | 'officer';
+    type:
+      | 'participant'
+      | 'feed'
+      | 'result'
+      | 'library'
+      | 'student'
+      | 'officer'
+      | 'user';
     id: number;
     label: string;
   } | null>(null);
@@ -350,6 +366,27 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     fetchDashboardData();
   }, [fetchDashboardData]);
 
+  // Auto-populate Class Teacher / Class Officer form fields with current holder's name & photo when class or role changes
+  useEffect(() => {
+    const targetClass = isSuperAdmin ? offClass : lockedClass || offClass;
+    const found = classOfficersList.find(
+      (o) =>
+        o.classCode === targetClass &&
+        o.roleTitle.trim().toLowerCase() === offRole.trim().toLowerCase()
+    );
+    if (found) {
+      setOffName(found.holderName || '');
+      setOffAdmissionNo(found.admissionNo || '');
+      setOffPhotoUrl(found.photoUrl || STUDIO_PORTRAIT_PRESETS[0].url);
+      setOffResponsibilities(found.responsibilities || '');
+    } else {
+      setOffName('');
+      setOffAdmissionNo('');
+      setOffPhotoUrl(STUDIO_PORTRAIT_PRESETS[0].url);
+      setOffResponsibilities('');
+    }
+  }, [offClass, offRole, classOfficersList, isSuperAdmin, lockedClass]);
+
   // Helper to upload file to /api/admin/upload
   const handleFileUpload = async (
     file: File,
@@ -384,7 +421,9 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       onUploaded(data);
       setBanner({
         type: 'success',
-        text: `Uploaded ${file.name} (${data.fileSize}) safely.`,
+        text: data.hostedOn
+          ? `Uploaded ${file.name} (${data.fileSize}) to ImgBB (https://imgbb.com/) -> ${data.fileUrl}`
+          : `Uploaded ${file.name} (${data.fileSize}) safely.`,
       });
     } catch (err: any) {
       setBanner({
@@ -468,6 +507,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           ? `/api/admin/students/${id}`
           : type === 'officer'
           ? `/api/admin/class-officers/${id}`
+          : type === 'user'
+          ? `/api/admin/users/${id}`
           : type === 'feed'
           ? `/api/admin/feed/${id}`
           : type === 'result'
@@ -800,12 +841,15 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     }
   };
 
-  // Update Admin User Status or Class Assignment
+  // Update Admin User Status, Gmail, Password, Role, or Class Assignment
   const handleUpdateAdminUser = async (
     userId: number,
     updates: {
+      email?: string;
+      name?: string;
+      newPassword?: string;
       status?: 'ACTIVE' | 'DEACTIVATED';
-      assignedClass?: ClassCode;
+      assignedClass?: ClassCode | null;
       role?: 'SUPER_ADMIN' | 'CLASS_ADMIN';
       replaceExistingClassAdmin?: boolean;
     }
@@ -822,9 +866,12 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       if (!res.ok) {
         throw new Error(data.error || 'Failed to update administrator.');
       }
+      setEditingUser(null);
       setBanner({
         type: 'success',
-        text: `Updated administrator ${data.user.email}.`,
+        text: `Updated user ${data.user.email} (${data.user.role}${
+          data.user.assignedClass ? ` · ${data.user.assignedClass}` : ''
+        }).`,
       });
       await fetchDashboardData();
     } catch (err: any) {
@@ -920,18 +967,18 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     }
   };
 
-  // Save Class Officer (Strictly Super Admin only)
+  // Save Class Teacher or Class Officer
   const handleSaveClassOfficer = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!isSuperAdmin) return;
     setActionBusy(true);
     setBanner(null);
     try {
+      const targetClass = isSuperAdmin ? offClass : lockedClass!;
       const res = await fetch('/api/admin/class-officers', {
         method: 'POST',
         headers: authHeaders(),
         body: JSON.stringify({
-          classCode: offClass,
+          classCode: targetClass,
           roleTitle: offRole,
           holderName: offName.trim(),
           admissionNo: offAdmissionNo.trim(),
@@ -943,12 +990,9 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       if (!res.ok) {
         throw new Error(data.error || 'Failed to assign Class Officer.');
       }
-      setOffName('');
-      setOffAdmissionNo('');
-      setOffResponsibilities('');
       setBanner({
         type: 'success',
-        text: `Assigned ${data.officer.holderName} as ${data.officer.roleTitle} for Class ${data.officer.classCode}.`,
+        text: `Saved ${data.officer.holderName} as ${data.officer.roleTitle} for Class ${data.officer.classCode}.`,
       });
       await fetchDashboardData();
       onPublicDataChanged();
@@ -962,7 +1006,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     }
   };
 
-  // Save Edited Poster from Photoshop Studio
+  // Save Edited Poster from Photoshop Studio (Also uploads PNG to ImgBB if PNG data URL)
   const handleSavePosterFromStudio = async (
     posterId: number,
     updatedDataUrl: string,
@@ -973,11 +1017,31 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     setActionBusy(true);
     setBanner(null);
     try {
+      let finalPosterUrl = updatedDataUrl;
+      if (updatedDataUrl.startsWith('data:image/png;base64,')) {
+        try {
+          const uploadRes = await fetch('/api/admin/upload', {
+            method: 'POST',
+            headers: authHeaders(),
+            body: JSON.stringify({
+              fileName: `ilm_poster_${posterId}.png`,
+              base64Data: updatedDataUrl,
+            }),
+          });
+          const uploadJson = await uploadRes.json();
+          if (uploadRes.ok && uploadJson.fileUrl) {
+            finalPosterUrl = uploadJson.fileUrl;
+          }
+        } catch {
+          // Keep data URL if offline
+        }
+      }
+
       const res = await fetch(`/api/admin/posters/${posterId}`, {
         method: 'PATCH',
         headers: authHeaders(),
         body: JSON.stringify({
-          posterImageUrl: updatedDataUrl,
+          posterImageUrl: finalPosterUrl,
           title,
           subtitle,
           participantsSnapshot,
@@ -1512,6 +1576,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                           <PosterStageCard
                             key={poster.id}
                             poster={poster}
+                            liveParticipants={participantsList}
                             onRegenerate={() =>
                               handleRegeneratePoster(
                                 poster.classCode,
@@ -2104,7 +2169,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               )}
 
               {/* ===============================================================
-                  SECTION 2C: CLASS OFFICERS (STRICTLY SUPER ADMIN ADD/EDIT ONLY)
+                  SECTION 2C: CLASS TEACHER & CLASS OFFICERS MANAGEMENT
                  =============================================================== */}
               {activeSection === 'officers' && (
                 <div className="space-y-8">
@@ -2112,248 +2177,417 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     <div>
                       <div className="inline-flex items-center gap-2 text-[#F3D068] text-xs font-semibold uppercase tracking-widest mb-1">
                         <Crown className="w-4 h-4" />
-                        <span>Separate Class Executive Leadership Section</span>
+                        <span>Class Teacher & Executive Leadership Section</span>
                       </div>
                       <h1 className="font-display text-2xl font-bold text-white">
                         {isSuperAdmin
-                          ? 'Class Officers Management (U1 – U6)'
-                          : `Class ${lockedClass} Executive Officers`}
+                          ? 'Class Teachers & Class Officers (U1 – U6)'
+                          : `Class ${lockedClass} Class Teacher & Executive Officers`}
                       </h1>
                       <p className="text-sm text-neutral-400 mt-1">
-                        Each class has 6 official leadership positions: 1 President, 1 Vice President of Membership, 1 Vice President of Education, 1 Vice President of Public Relations, 1 Secretary, and 1 Treasurer.{' '}
-                        <strong className="text-[#F3D068]">
-                          Strictly Super Admin only can add or edit Class Officers.
-                        </strong>
+                        Assign or update the{' '}
+                        <strong className="text-[#F3D068]">Class Teacher</strong>{' '}
+                        and all 6 official Class Officer roles: President, Vice President of Membership, Vice President of Education, Vice President of Public Relations, Secretary, and Treasurer — complete with photograph and name.
                       </p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setOffRole('Class Teacher');
+                          window.scrollTo({ top: 0, behavior: 'smooth' });
+                        }}
+                        className="px-4 py-2 rounded-xl bg-gradient-to-r from-[#C89D2E] via-[#E8C55B] to-[#C89D2E] text-neutral-950 font-bold text-xs cursor-pointer shadow"
+                      >
+                        + Assign / Edit Class Teacher
+                      </button>
                     </div>
                   </div>
 
-                  {/* Super Admin Only Form to Add/Edit Class Officer */}
-                  {isSuperAdmin ? (
-                    <form
-                      onSubmit={handleSaveClassOfficer}
-                      className="p-6 rounded-xl bg-[#0E1118] border border-[#D4AF37]/40 space-y-4"
-                    >
+                  {/* Form to Add / Edit Class Teacher or Class Officer */}
+                  <form
+                    onSubmit={handleSaveClassOfficer}
+                    className="p-6 rounded-xl bg-[#0E1118] border border-[#D4AF37]/40 space-y-4"
+                  >
+                    <div className="flex flex-wrap items-center justify-between gap-2">
                       <h2 className="font-display text-lg font-bold text-white">
-                        Assign or Update Class Officer (Super Admin Exclusive)
+                        {offRole === 'Class Teacher'
+                          ? `Assign / Update Class Teacher (Class ${
+                              isSuperAdmin ? offClass : lockedClass
+                            })`
+                          : `Assign / Update ${offRole} (Class ${
+                              isSuperAdmin ? offClass : lockedClass
+                            })`}
                       </h2>
-
-                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
-                        <div>
-                          <label className="block text-xs font-medium text-neutral-300 mb-1">
-                            Class Cohort (U1–U6) *
-                          </label>
-                          <select
-                            value={offClass}
-                            onChange={(e) =>
-                              setOffClass(e.target.value as ClassCode)
-                            }
-                            className="w-full px-3.5 py-2 rounded-lg bg-[#12151F] border border-neutral-700 text-sm text-white"
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        {CLASS_OFFICER_ROLES.map((r) => (
+                          <button
+                            key={r}
+                            type="button"
+                            onClick={() => setOffRole(r)}
+                            className={`px-2.5 py-1 rounded-lg text-[11px] font-semibold border transition-colors cursor-pointer ${
+                              offRole === r
+                                ? 'bg-[#D4AF37] text-neutral-950 border-[#D4AF37]'
+                                : 'bg-[#121622] text-neutral-300 border-neutral-800 hover:text-white'
+                            }`}
                           >
-                            {VALID_CLASSES.map((c) => (
-                              <option key={c} value={c}>
-                                Class {c}
-                              </option>
-                            ))}
-                          </select>
-                        </div>
-
-                        <div>
-                          <label className="block text-xs font-medium text-neutral-300 mb-1">
-                            Executive Office Role (6 Positions) *
-                          </label>
-                          <select
-                            value={offRole}
-                            onChange={(e) =>
-                              setOffRole(e.target.value as ClassOfficerRole)
-                            }
-                            className="w-full px-3.5 py-2 rounded-lg bg-[#12151F] border border-neutral-700 text-sm text-white"
-                          >
-                            {CLASS_OFFICER_ROLES.map((r) => (
-                              <option key={r} value={r}>
-                                {r}
-                              </option>
-                            ))}
-                          </select>
-                        </div>
-
-                        <div>
-                          <label className="block text-xs font-medium text-neutral-300 mb-1">
-                            Officer Full Name *
-                          </label>
-                          <input
-                            type="text"
-                            required
-                            value={offName}
-                            onChange={(e) => setOffName(e.target.value)}
-                            placeholder="e.g., Abdullah Tariq"
-                            className="w-full px-3.5 py-2 rounded-lg bg-[#12151F] border border-neutral-700 text-sm text-white"
-                          />
-                        </div>
-
-                        <div>
-                          <label className="block text-xs font-medium text-neutral-300 mb-1">
-                            Admission No
-                          </label>
-                          <input
-                            type="text"
-                            value={offAdmissionNo}
-                            onChange={(e) => setOffAdmissionNo(e.target.value)}
-                            placeholder="e.g., ADM-U1-001"
-                            className="w-full px-3.5 py-2 rounded-lg bg-[#12151F] border border-neutral-700 text-sm text-white font-mono"
-                          />
-                        </div>
-
-                        <div>
-                          <label className="block text-xs font-medium text-neutral-300 mb-1">
-                            Responsibilities / Note
-                          </label>
-                          <input
-                            type="text"
-                            value={offResponsibilities}
-                            onChange={(e) =>
-                              setOffResponsibilities(e.target.value)
-                            }
-                            placeholder="Executive responsibilities..."
-                            className="w-full px-3.5 py-2 rounded-lg bg-[#12151F] border border-neutral-700 text-sm text-white"
-                          />
-                        </div>
+                            {r}
+                          </button>
+                        ))}
                       </div>
-
-                      <div className="flex flex-wrap items-center justify-between gap-4 pt-2">
-                        <div className="flex items-center gap-3">
-                          <label className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg bg-[#161A26] text-[#F3D068] border border-[#D4AF37]/40 text-xs font-medium cursor-pointer">
-                            <Upload className="w-3.5 h-3.5" />
-                            <span>Upload Officer Photo</span>
-                            <input
-                              type="file"
-                              accept="image/jpeg,image/png,image/webp"
-                              className="hidden"
-                              onChange={(e) => {
-                                const file = e.target.files?.[0];
-                                if (file) {
-                                  handleFileUpload(file, (uploaded) =>
-                                    setOffPhotoUrl(uploaded.fileUrl)
-                                  );
-                                }
-                              }}
-                            />
-                          </label>
-                          <img
-                            src={offPhotoUrl}
-                            alt="Officer preview"
-                            referrerPolicy="no-referrer"
-                            className="w-10 h-10 rounded-full object-cover border border-[#D4AF37]"
-                          />
-                        </div>
-
-                        <button
-                          type="submit"
-                          disabled={actionBusy}
-                          className="px-5 py-2.5 rounded-lg bg-[#D4AF37] text-neutral-950 font-semibold text-xs cursor-pointer"
-                        >
-                          Save Class Officer Assignment
-                        </button>
-                      </div>
-                    </form>
-                  ) : (
-                    <div className="p-4 rounded-xl bg-[#121622] border border-[#D4AF37]/30 text-xs text-neutral-300 flex items-center justify-between">
-                      <span>
-                        Viewing Class {lockedClass} Executive Officers. Only the Global Super Admin (nasirhussin12489@gmail.com) can add, edit, or remove Class Officers.
-                      </span>
-                      <span className="px-2.5 py-1 rounded bg-[#D4AF37]/20 text-[#F3D068] font-semibold">
-                        Read-Only for Class Admin
-                      </span>
                     </div>
-                  )}
 
-                  {/* Display Class Officers by Class */}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+                      <div>
+                        <label className="block text-xs font-medium text-neutral-300 mb-1">
+                          Class Cohort (U1–U6) *
+                        </label>
+                        <select
+                          value={isSuperAdmin ? offClass : lockedClass!}
+                          disabled={!isSuperAdmin}
+                          onChange={(e) =>
+                            setOffClass(e.target.value as ClassCode)
+                          }
+                          className="w-full px-3.5 py-2 rounded-lg bg-[#12151F] border border-neutral-700 text-sm text-white disabled:opacity-60"
+                        >
+                          {VALID_CLASSES.map((c) => (
+                            <option key={c} value={c}>
+                              Class {c}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+
+                      <div>
+                        <label className="block text-xs font-medium text-neutral-300 mb-1">
+                          Role (Class Teacher / 6 Officers) *
+                        </label>
+                        <select
+                          value={offRole}
+                          onChange={(e) =>
+                            setOffRole(e.target.value as ClassOfficerRole)
+                          }
+                          className="w-full px-3.5 py-2 rounded-lg bg-[#12151F] border border-neutral-700 text-sm text-white"
+                        >
+                          {CLASS_OFFICER_ROLES.map((r) => (
+                            <option key={r} value={r}>
+                              {r}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+
+                      <div>
+                        <label className="block text-xs font-medium text-neutral-300 mb-1">
+                          {offRole === 'Class Teacher'
+                            ? 'Class Teacher Full Name *'
+                            : 'Officer Full Name *'}
+                        </label>
+                        <input
+                          type="text"
+                          required
+                          value={offName}
+                          onChange={(e) => setOffName(e.target.value)}
+                          placeholder={
+                            offRole === 'Class Teacher'
+                              ? 'e.g., Prof. Maulana Tariq'
+                              : 'e.g., Abdullah Tariq'
+                          }
+                          className="w-full px-3.5 py-2 rounded-lg bg-[#12151F] border border-neutral-700 text-sm text-white"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-xs font-medium text-neutral-300 mb-1">
+                          {offRole === 'Class Teacher'
+                            ? 'Faculty / Staff ID'
+                            : 'Admission No'}
+                        </label>
+                        <input
+                          type="text"
+                          value={offAdmissionNo}
+                          onChange={(e) => setOffAdmissionNo(e.target.value)}
+                          placeholder={
+                            offRole === 'Class Teacher'
+                              ? 'e.g., FAC-U1-01'
+                              : 'e.g., ADM-U1-101'
+                          }
+                          className="w-full px-3.5 py-2 rounded-lg bg-[#12151F] border border-neutral-700 text-sm text-white font-mono"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-xs font-medium text-neutral-300 mb-1">
+                          Responsibilities / Subject
+                        </label>
+                        <input
+                          type="text"
+                          value={offResponsibilities}
+                          onChange={(e) =>
+                            setOffResponsibilities(e.target.value)
+                          }
+                          placeholder="Responsibilities or academic note..."
+                          className="w-full px-3.5 py-2 rounded-lg bg-[#12151F] border border-neutral-700 text-sm text-white"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="flex flex-wrap items-center justify-between gap-4 pt-2">
+                      <div className="flex flex-wrap items-center gap-3">
+                        <label className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg bg-[#161A26] text-[#F3D068] border border-[#D4AF37]/40 text-xs font-medium cursor-pointer">
+                          <Upload className="w-3.5 h-3.5" />
+                          <span>
+                            {offRole === 'Class Teacher'
+                              ? 'Upload Class Teacher Photo'
+                              : 'Upload Officer Photo'}
+                          </span>
+                          <input
+                            type="file"
+                            accept="image/jpeg,image/png,image/webp"
+                            className="hidden"
+                            onChange={(e) => {
+                              const file = e.target.files?.[0];
+                              if (file) {
+                                handleFileUpload(file, (uploaded) =>
+                                  setOffPhotoUrl(uploaded.fileUrl)
+                                );
+                              }
+                            }}
+                          />
+                        </label>
+
+                        {STUDIO_PORTRAIT_PRESETS.map((preset) => (
+                          <button
+                            key={preset.url}
+                            type="button"
+                            onClick={() => setOffPhotoUrl(preset.url)}
+                            className={`px-2.5 py-1.5 rounded-lg text-xs border transition-colors cursor-pointer ${
+                              offPhotoUrl === preset.url
+                                ? 'bg-[#D4AF37]/20 text-[#F3D068] border-[#D4AF37]'
+                                : 'bg-neutral-900 text-neutral-300 border-neutral-800'
+                            }`}
+                          >
+                            {preset.label.split(' ')[0]}{' '}
+                            {preset.label.split(' ')[1]}
+                          </button>
+                        ))}
+
+                        <div className="flex items-center gap-2.5 pl-2">
+                          <img
+                            src={offPhotoUrl || STUDIO_PORTRAIT_PRESETS[0].url}
+                            alt="Selected preview"
+                            referrerPolicy="no-referrer"
+                            onError={(e) => {
+                              (e.currentTarget as HTMLImageElement).src =
+                                STUDIO_PORTRAIT_PRESETS[0].url;
+                            }}
+                            className="w-12 h-12 rounded-xl object-cover object-top border-2 border-[#D4AF37]"
+                          />
+                          <div className="text-xs">
+                            <div className="font-bold text-white">
+                              {offName || 'Enter Name Above'}
+                            </div>
+                            <div className="text-[11px] text-[#F3D068]">
+                              Class {isSuperAdmin ? offClass : lockedClass} ·{' '}
+                              {offRole}
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+
+                      <button
+                        type="submit"
+                        disabled={actionBusy}
+                        className="px-5 py-2.5 rounded-lg bg-[#D4AF37] text-neutral-950 font-semibold text-xs cursor-pointer"
+                      >
+                        {offRole === 'Class Teacher'
+                          ? 'Save Class Teacher'
+                          : `Save ${offRole}`}
+                      </button>
+                    </div>
+                  </form>
+
+                  {/* Display Class Teacher & 6 Class Officers by Class */}
                   {(isSuperAdmin ? VALID_CLASSES : [lockedClass!]).map(
                     (clsCode) => {
                       const clsOfficers = classOfficersList.filter(
                         (o) => o.classCode === clsCode
                       );
+                      const teacherRecord = clsOfficers.find(
+                        (o) =>
+                          o.roleTitle.trim().toLowerCase() === 'class teacher'
+                      );
+
                       return (
                         <div
                           key={clsCode}
-                          className="p-6 rounded-2xl bg-[#0E1118] border border-neutral-800 space-y-4"
+                          className="p-6 rounded-2xl bg-[#0E1118] border border-neutral-800 space-y-5"
                         >
                           <div className="flex items-center justify-between border-b border-neutral-800 pb-3">
                             <div className="flex items-center gap-2.5">
                               <Crown className="w-5 h-5 text-[#D4AF37]" />
                               <h3 className="font-display text-lg font-bold text-white">
-                                Class {clsCode} Executive Office Bearers
+                                Class {clsCode} — Class Teacher & Executive Office Bearers
                               </h3>
                             </div>
                             <span className="font-mono-tabular text-xs text-[#F3D068]">
-                              {clsOfficers.length} / 6 Positions Assigned
+                              {clsOfficers.length} / {CLASS_OFFICER_ROLES.length} Assigned
                             </span>
                           </div>
 
+                          {/* Featured Class Teacher Banner Card */}
+                          <div className="p-5 rounded-xl bg-gradient-to-r from-[#141927] via-[#111522] to-[#141927] border-2 border-[#D4AF37]/55 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                            <div className="flex items-center gap-4">
+                              <img
+                                src={
+                                  teacherRecord?.photoUrl ||
+                                  STUDIO_PORTRAIT_PRESETS[1].url
+                                }
+                                alt={
+                                  teacherRecord?.holderName ||
+                                  `Class ${clsCode} Teacher`
+                                }
+                                referrerPolicy="no-referrer"
+                                onError={(e) => {
+                                  (e.currentTarget as HTMLImageElement).src =
+                                    STUDIO_PORTRAIT_PRESETS[1].url;
+                                }}
+                                className="w-16 h-16 rounded-2xl object-cover object-top border-2 border-[#D4AF37] shrink-0 shadow-lg"
+                              />
+                              <div>
+                                <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-[#D4AF37]/20 border border-[#D4AF37]/50 text-[10px] font-bold uppercase tracking-wider text-[#F3D068]">
+                                  <GraduationCap className="w-3.5 h-3.5" />
+                                  <span>Class {clsCode} · Class Teacher</span>
+                                </div>
+                                <div className="font-display font-bold text-lg text-white mt-1">
+                                  {teacherRecord?.holderName ||
+                                    `Class ${clsCode} Teacher (Click Edit to Assign)`}
+                                </div>
+                                <div className="text-xs text-neutral-300 mt-0.5">
+                                  {teacherRecord?.admissionNo && (
+                                    <span className="font-mono-tabular text-emerald-300 mr-2">
+                                      ID: {teacherRecord.admissionNo}
+                                    </span>
+                                  )}
+                                  <span>
+                                    {teacherRecord?.responsibilities ||
+                                      `Official Class Teacher & Faculty Advisor for Class ${clsCode}.`}
+                                  </span>
+                                </div>
+                              </div>
+                            </div>
+
+                            <div className="flex items-center gap-2 shrink-0">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setOffClass(clsCode);
+                                  setOffRole('Class Teacher');
+                                  setOffName(teacherRecord?.holderName || '');
+                                  setOffAdmissionNo(
+                                    teacherRecord?.admissionNo || ''
+                                  );
+                                  setOffPhotoUrl(
+                                    teacherRecord?.photoUrl ||
+                                      STUDIO_PORTRAIT_PRESETS[1].url
+                                  );
+                                  setOffResponsibilities(
+                                    teacherRecord?.responsibilities || ''
+                                  );
+                                  window.scrollTo({
+                                    top: 0,
+                                    behavior: 'smooth',
+                                  });
+                                }}
+                                className="px-3.5 py-2 rounded-lg bg-[#D4AF37] text-neutral-950 font-semibold text-xs cursor-pointer"
+                              >
+                                {teacherRecord
+                                  ? 'Edit Class Teacher'
+                                  : '+ Add Class Teacher'}
+                              </button>
+                            </div>
+                          </div>
+
+                          {/* 6 Executive Officers Grid (President, VPs, Secretary, Treasurer) */}
                           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                            {CLASS_OFFICER_ROLES.map((roleTitle) => {
+                            {CLASS_OFFICER_ROLES.filter(
+                              (r) => r !== 'Class Teacher'
+                            ).map((roleTitle, idx) => {
                               const officer = clsOfficers.find(
-                                (o) => o.roleTitle === roleTitle
+                                (o) =>
+                                  o.roleTitle.trim().toLowerCase() ===
+                                  roleTitle.trim().toLowerCase()
                               );
+                              const fallbackImg =
+                                STUDIO_PORTRAIT_PRESETS[
+                                  idx % STUDIO_PORTRAIT_PRESETS.length
+                                ].url;
                               return (
                                 <div
                                   key={roleTitle}
-                                  className="p-4 rounded-xl bg-[#121622] border border-neutral-800 flex items-start justify-between gap-3"
+                                  className="p-4 rounded-xl bg-[#121622] border border-neutral-800 hover:border-[#D4AF37]/50 transition-colors flex items-start justify-between gap-3"
                                 >
-                                  <div className="flex items-center gap-3 min-w-0">
-                                    {officer ? (
-                                      <img
-                                        src={officer.photoUrl}
-                                        alt={officer.holderName}
-                                        referrerPolicy="no-referrer"
-                                        className="w-12 h-12 rounded-xl object-cover object-top border border-[#D4AF37] shrink-0"
-                                      />
-                                    ) : (
-                                      <div className="w-12 h-12 rounded-xl bg-neutral-900 border border-neutral-800 flex items-center justify-center text-neutral-600 shrink-0">
-                                        <Crown className="w-5 h-5" />
-                                      </div>
-                                    )}
+                                  <div className="flex items-center gap-3.5 min-w-0">
+                                    <img
+                                      src={officer?.photoUrl || fallbackImg}
+                                      alt={
+                                        officer?.holderName || roleTitle
+                                      }
+                                      referrerPolicy="no-referrer"
+                                      onError={(e) => {
+                                        (
+                                          e.currentTarget as HTMLImageElement
+                                        ).src = fallbackImg;
+                                      }}
+                                      className="w-14 h-14 rounded-xl object-cover object-top border-2 border-[#D4AF37] shrink-0"
+                                    />
                                     <div className="min-w-0">
                                       <div className="text-[10px] font-bold uppercase tracking-wider text-[#F3D068]">
                                         {roleTitle}
                                       </div>
                                       <div className="font-display font-bold text-sm text-white truncate mt-0.5">
-                                        {officer
-                                          ? officer.holderName
-                                          : 'Vacant Position'}
+                                        {officer?.holderName ||
+                                          'Not Assigned Yet'}
                                       </div>
                                       {officer?.admissionNo && (
-                                        <div className="text-[11px] font-mono-tabular text-neutral-400">
-                                          Admission No: {officer.admissionNo}
+                                        <div className="text-[11px] font-mono-tabular text-emerald-300 mt-0.5">
+                                          Adm No: {officer.admissionNo}
+                                        </div>
+                                      )}
+                                      {officer?.responsibilities && (
+                                        <div className="text-[11px] text-neutral-400 line-clamp-1 mt-0.5">
+                                          {officer.responsibilities}
                                         </div>
                                       )}
                                     </div>
                                   </div>
 
-                                  {isSuperAdmin && officer && (
-                                    <div className="flex flex-col gap-1 shrink-0">
-                                      <button
-                                        type="button"
-                                        onClick={() => {
-                                          setOffClass(officer.classCode);
-                                          setOffRole(officer.roleTitle);
-                                          setOffName(officer.holderName);
-                                          setOffAdmissionNo(
-                                            officer.admissionNo || ''
-                                          );
-                                          setOffPhotoUrl(officer.photoUrl);
-                                          setOffResponsibilities(
-                                            officer.responsibilities || ''
-                                          );
-                                          window.scrollTo({
-                                            top: 0,
-                                            behavior: 'smooth',
-                                          });
-                                        }}
-                                        className="px-2 py-1 rounded bg-neutral-900 hover:bg-neutral-800 text-[11px] text-[#F3D068] border border-neutral-700 cursor-pointer"
-                                      >
-                                        Edit
-                                      </button>
+                                  <div className="flex flex-col gap-1 shrink-0">
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        setOffClass(clsCode);
+                                        setOffRole(roleTitle);
+                                        setOffName(officer?.holderName || '');
+                                        setOffAdmissionNo(
+                                          officer?.admissionNo || ''
+                                        );
+                                        setOffPhotoUrl(
+                                          officer?.photoUrl || fallbackImg
+                                        );
+                                        setOffResponsibilities(
+                                          officer?.responsibilities || ''
+                                        );
+                                        window.scrollTo({
+                                          top: 0,
+                                          behavior: 'smooth',
+                                        });
+                                      }}
+                                      className="px-2.5 py-1 rounded bg-neutral-900 hover:bg-neutral-800 text-[11px] text-[#F3D068] border border-neutral-700 cursor-pointer"
+                                    >
+                                      {officer ? 'Edit' : 'Assign'}
+                                    </button>
+                                    {officer && (
                                       <button
                                         type="button"
                                         onClick={() =>
@@ -2363,12 +2597,12 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                                             label: `${officer.roleTitle}: ${officer.holderName} (Class ${officer.classCode})`,
                                           })
                                         }
-                                        className="px-2 py-1 rounded bg-red-950/40 hover:bg-red-950/80 text-[11px] text-red-300 border border-red-900/40 cursor-pointer"
+                                        className="px-2.5 py-1 rounded bg-red-950/40 hover:bg-red-950/80 text-[11px] text-red-300 border border-red-900/40 cursor-pointer"
                                       >
                                         Remove
                                       </button>
-                                    </div>
-                                  )}
+                                    )}
+                                  </div>
                                 </div>
                               );
                             })}
@@ -2677,6 +2911,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                       </div>
                       <PosterStageCard
                         poster={latestGeneratedPoster}
+                        liveParticipants={participantsList}
                         onOpenStudio={(p) => setStudioPoster(p)}
                         onPostToFeed={(p) => handlePostPosterToFeed(p)}
                       />
@@ -3008,7 +3243,14 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                               </button>
                             </div>
                           </div>
-                          <PosterStageCard poster={poster} />
+                          <PosterStageCard
+                            poster={poster}
+                            liveParticipants={participantsList}
+                            onOpenStudio={(target) => setStudioPoster(target)}
+                            onPostToFeed={(target) =>
+                              handlePostPosterToFeed(target)
+                            }
+                          />
                         </div>
                       ))}
                   </div>
@@ -3766,22 +4008,28 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                  =============================================================== */}
               {activeSection === 'users' && isSuperAdmin && (
                 <div className="space-y-8">
-                  <div>
-                    <h1 className="font-display text-2xl font-bold text-white">
-                      Users & Administrator Role Management
-                    </h1>
-                    <p className="text-sm text-neutral-400 mt-1">
-                      Provision Super Admins and Class Admins (U1–U6). Backend enforces the strict one-active-Class-Admin-per-class rule.
-                    </p>
+                  <div className="flex flex-wrap items-center justify-between gap-4">
+                    <div>
+                      <h1 className="font-display text-2xl font-bold text-white">
+                        Users, Gmail & Password Management
+                      </h1>
+                      <p className="text-sm text-neutral-400 mt-1">
+                        View every user’s Gmail and Password, change their Role (Super Admin / Class Admin) or Assigned Class (U1–U6), edit Gmail & Password, or delete accounts.
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-emerald-950/40 border border-emerald-700/40 text-xs text-emerald-300">
+                      <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                      <span>Firebase Connected · ImgBB Image Hosting Active</span>
+                    </div>
                   </div>
 
-                  {/* Create / Invite Admin Form */}
+                  {/* Create / Add New User Form */}
                   <form
                     onSubmit={handleCreateAdminUser}
                     className="p-6 rounded-xl bg-[#0E1118] border border-[#D4AF37]/40 space-y-4"
                   >
                     <h2 className="font-display text-lg font-bold text-white">
-                      Create or Invite Authorized Administrator
+                      Add New User (Gmail & Password)
                     </h2>
 
                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
@@ -3801,14 +4049,14 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
                       <div>
                         <label className="block text-xs font-medium text-neutral-300 mb-1">
-                          Administrator Email *
+                          Gmail Address *
                         </label>
                         <input
                           type="email"
                           required
                           value={uEmail}
                           onChange={(e) => setUEmail(e.target.value)}
-                          placeholder="admin@ilm.edu.pk"
+                          placeholder="example@gmail.com"
                           className="w-full px-3 py-2 rounded-lg bg-[#12151F] border border-neutral-700 text-sm text-white"
                         />
                       </div>
@@ -3853,13 +4101,14 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
                       <div>
                         <label className="block text-xs font-medium text-neutral-300 mb-1">
-                          Initial Password *
+                          Password *
                         </label>
                         <input
                           type="text"
                           required
                           value={uPassword}
                           onChange={(e) => setUPassword(e.target.value)}
+                          placeholder="Enter password"
                           className="w-full px-3 py-2 rounded-lg bg-[#12151F] border border-neutral-700 text-sm text-white font-mono"
                         />
                       </div>
@@ -3885,40 +4134,199 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                         disabled={actionBusy}
                         className="px-5 py-2.5 rounded-lg bg-[#D4AF37] text-neutral-950 font-semibold text-xs cursor-pointer"
                       >
-                        Provision Administrator Account
+                        Add User Account
                       </button>
                     </div>
                   </form>
 
-                  {/* Administrators Table */}
-                  <div className="rounded-xl bg-[#0E1118] border border-neutral-800 overflow-hidden">
+                  {/* Edit User Modal / Form when editingUser is selected */}
+                  {editingUser && (
+                    <form
+                      onSubmit={(e) => {
+                        e.preventDefault();
+                        handleUpdateAdminUser(editingUser.id, {
+                          name: editUserName.trim(),
+                          email: editUserEmail.trim(),
+                          newPassword: editUserPassword.trim(),
+                          role: editUserRole,
+                          assignedClass:
+                            editUserRole === 'CLASS_ADMIN'
+                              ? editUserClass
+                              : null,
+                          replaceExistingClassAdmin: true,
+                        });
+                      }}
+                      className="p-6 rounded-xl bg-[#131826] border-2 border-[#D4AF37] space-y-4 shadow-2xl"
+                    >
+                      <div className="flex items-center justify-between">
+                        <h3 className="font-display text-base font-bold text-[#F3D068]">
+                          Edit User Gmail, Password & Role — {editingUser.email}
+                        </h3>
+                        <button
+                          type="button"
+                          onClick={() => setEditingUser(null)}
+                          className="text-xs text-neutral-400 hover:text-white cursor-pointer"
+                        >
+                          Cancel Edit
+                        </button>
+                      </div>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+                        <div>
+                          <label className="block text-xs font-medium text-neutral-300 mb-1">
+                            Full Name *
+                          </label>
+                          <input
+                            type="text"
+                            required
+                            value={editUserName}
+                            onChange={(e) => setEditUserName(e.target.value)}
+                            className="w-full px-3 py-2 rounded-lg bg-[#0B0D14] border border-neutral-700 text-sm text-white"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="block text-xs font-medium text-neutral-300 mb-1">
+                            Gmail Address *
+                          </label>
+                          <input
+                            type="email"
+                            required
+                            value={editUserEmail}
+                            onChange={(e) => setEditUserEmail(e.target.value)}
+                            className="w-full px-3 py-2 rounded-lg bg-[#0B0D14] border border-neutral-700 text-sm text-white"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="block text-xs font-medium text-neutral-300 mb-1">
+                            Password *
+                          </label>
+                          <input
+                            type="text"
+                            required
+                            value={editUserPassword}
+                            onChange={(e) => setEditUserPassword(e.target.value)}
+                            placeholder="Enter new or current password"
+                            className="w-full px-3 py-2 rounded-lg bg-[#0B0D14] border border-neutral-700 text-sm text-[#F3D068] font-mono"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="block text-xs font-medium text-neutral-300 mb-1">
+                            Role *
+                          </label>
+                          <select
+                            value={editUserRole}
+                            onChange={(e) =>
+                              setEditUserRole(
+                                e.target.value as 'SUPER_ADMIN' | 'CLASS_ADMIN'
+                              )
+                            }
+                            className="w-full px-3 py-2 rounded-lg bg-[#0B0D14] border border-neutral-700 text-sm text-white"
+                          >
+                            <option value="CLASS_ADMIN">Class Admin</option>
+                            <option value="SUPER_ADMIN">Super Admin</option>
+                          </select>
+                        </div>
+
+                        <div>
+                          <label className="block text-xs font-medium text-neutral-300 mb-1">
+                            Assigned Class
+                          </label>
+                          <select
+                            value={editUserClass}
+                            disabled={editUserRole === 'SUPER_ADMIN'}
+                            onChange={(e) =>
+                              setEditUserClass(e.target.value as ClassCode)
+                            }
+                            className="w-full px-3 py-2 rounded-lg bg-[#0B0D14] border border-neutral-700 text-sm text-white disabled:opacity-50"
+                          >
+                            {VALID_CLASSES.map((c) => (
+                              <option key={c} value={c}>
+                                Class {c}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                      </div>
+
+                      <div className="flex justify-end gap-3 pt-2">
+                        <button
+                          type="button"
+                          onClick={() => setEditingUser(null)}
+                          className="px-4 py-2 rounded-lg bg-neutral-900 text-xs text-neutral-300 border border-neutral-700 cursor-pointer"
+                        >
+                          Cancel
+                        </button>
+                        <button
+                          type="submit"
+                          disabled={actionBusy}
+                          className="px-5 py-2 rounded-lg bg-[#D4AF37] text-neutral-950 font-semibold text-xs cursor-pointer"
+                        >
+                          {actionBusy ? 'Saving...' : 'Save Gmail, Password & Role'}
+                        </button>
+                      </div>
+                    </form>
+                  )}
+
+                  {/* Users Table with Gmail, Password, Role Switcher, Class Switcher, Edit & Delete */}
+                  <div className="rounded-xl bg-[#0E1118] border border-neutral-800 overflow-x-auto">
                     <table className="w-full text-left border-collapse">
                       <thead>
                         <tr className="border-b border-neutral-800 text-xs text-neutral-400 uppercase">
-                          <th className="py-3.5 px-5">Name & Email</th>
+                          <th className="py-3.5 px-5">Name</th>
+                          <th className="py-3.5 px-5">Gmail</th>
+                          <th className="py-3.5 px-5">Password</th>
                           <th className="py-3.5 px-5">Role</th>
                           <th className="py-3.5 px-5">Assigned Class</th>
                           <th className="py-3.5 px-5">Status</th>
-                          <th className="py-3.5 px-5 text-right">Actions</th>
+                          <th className="py-3.5 px-5 text-right">
+                            Edit / Delete
+                          </th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-neutral-800 text-sm">
                         {usersList.map((u) => (
                           <tr key={u.id} className="hover:bg-[#141824]">
-                            <td className="py-3.5 px-5">
-                              <div className="font-semibold text-white">
-                                {u.name}
-                              </div>
-                              <div className="text-xs text-neutral-400">
-                                {u.email}
-                              </div>
+                            <td className="py-3.5 px-5 font-semibold text-white">
+                              {u.name}
                             </td>
-                            <td className="py-3.5 px-5 text-xs font-semibold text-[#F3D068]">
-                              {u.role}
+                            <td className="py-3.5 px-5 font-mono text-xs text-emerald-300">
+                              {u.email}
+                            </td>
+                            <td className="py-3.5 px-5">
+                              <span className="inline-flex items-center px-2.5 py-1 rounded bg-[#161A26] border border-[#D4AF37]/40 font-mono text-xs text-[#F3D068] select-all">
+                                {u.passwordPlain || 'IlmAdmin#2026'}
+                              </span>
+                            </td>
+                            <td className="py-3.5 px-5">
+                              <select
+                                value={u.role}
+                                onChange={(e) => {
+                                  const nextRole = e.target.value as
+                                    | 'SUPER_ADMIN'
+                                    | 'CLASS_ADMIN';
+                                  handleUpdateAdminUser(u.id, {
+                                    role: nextRole,
+                                    assignedClass:
+                                      nextRole === 'CLASS_ADMIN'
+                                        ? u.assignedClass || 'U1'
+                                        : null,
+                                    replaceExistingClassAdmin: true,
+                                  });
+                                }}
+                                className="px-2.5 py-1 rounded bg-neutral-900 border border-neutral-700 text-xs font-semibold text-[#F3D068]"
+                              >
+                                <option value="SUPER_ADMIN">SUPER_ADMIN</option>
+                                <option value="CLASS_ADMIN">CLASS_ADMIN</option>
+                              </select>
                             </td>
                             <td className="py-3.5 px-5 font-mono-tabular text-xs text-white">
                               {u.role === 'SUPER_ADMIN' ? (
-                                'Global (All U1–U6)'
+                                <span className="text-neutral-400">
+                                  Global (All U1–U6)
+                                </span>
                               ) : (
                                 <select
                                   value={u.assignedClass || 'U1'}
@@ -3929,7 +4337,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                                       replaceExistingClassAdmin: true,
                                     })
                                   }
-                                  className="px-2 py-1 rounded bg-neutral-900 border border-neutral-700 text-xs text-white"
+                                  className="px-2.5 py-1 rounded bg-neutral-900 border border-neutral-700 text-xs text-white"
                                 >
                                   {VALID_CLASSES.map((c) => (
                                     <option key={c} value={c}>
@@ -3940,36 +4348,62 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                               )}
                             </td>
                             <td className="py-3.5 px-5 text-xs">
-                              <span
-                                className={
-                                  u.status === 'ACTIVE'
-                                    ? 'text-emerald-400 font-semibold'
-                                    : 'text-neutral-500'
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  handleUpdateAdminUser(u.id, {
+                                    status:
+                                      u.status === 'ACTIVE'
+                                        ? 'DEACTIVATED'
+                                        : 'ACTIVE',
+                                    replaceExistingClassAdmin: true,
+                                  })
                                 }
+                                className={`px-2.5 py-1 rounded text-xs font-semibold cursor-pointer border ${
+                                  u.status === 'ACTIVE'
+                                    ? 'bg-emerald-950/50 text-emerald-300 border-emerald-700/50'
+                                    : 'bg-neutral-900 text-neutral-400 border-neutral-700'
+                                }`}
                               >
                                 {u.status}
-                              </span>
+                              </button>
                             </td>
                             <td className="py-3.5 px-5 text-right">
-                              {u.id !== currentUser.id && (
+                              <div className="inline-flex items-center gap-2">
                                 <button
                                   type="button"
-                                  onClick={() =>
-                                    handleUpdateAdminUser(u.id, {
-                                      status:
-                                        u.status === 'ACTIVE'
-                                          ? 'DEACTIVATED'
-                                          : 'ACTIVE',
-                                      replaceExistingClassAdmin: true,
-                                    })
-                                  }
-                                  className="px-3 py-1 rounded bg-neutral-900 hover:bg-neutral-800 text-xs text-neutral-200 border border-neutral-700 cursor-pointer"
+                                  onClick={() => {
+                                    setEditingUser(u);
+                                    setEditUserName(u.name);
+                                    setEditUserEmail(u.email);
+                                    setEditUserPassword(
+                                      u.passwordPlain || 'IlmAdmin#2026'
+                                    );
+                                    setEditUserRole(u.role);
+                                    setEditUserClass(u.assignedClass || 'U1');
+                                  }}
+                                  className="inline-flex items-center gap-1 px-2.5 py-1 rounded bg-[#161A26] hover:bg-[#1E2436] text-xs text-[#F3D068] border border-[#D4AF37]/40 cursor-pointer"
                                 >
-                                  {u.status === 'ACTIVE'
-                                    ? 'Deactivate'
-                                    : 'Activate'}
+                                  <Edit3 className="w-3 h-3" />
+                                  <span>Edit</span>
                                 </button>
-                              )}
+                                {u.id !== currentUser.id && (
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      setConfirmDelete({
+                                        type: 'user',
+                                        id: u.id,
+                                        label: `${u.name} (${u.email})`,
+                                      })
+                                    }
+                                    className="inline-flex items-center gap-1 px-2.5 py-1 rounded bg-red-950/40 hover:bg-red-950/80 text-xs text-red-300 border border-red-900/50 cursor-pointer"
+                                  >
+                                    <Trash2 className="w-3 h-3" />
+                                    <span>Delete</span>
+                                  </button>
+                                )}
+                              </div>
                             </td>
                           </tr>
                         ))}

@@ -11,6 +11,7 @@ export type CompetitionCategoryName =
   | 'Grammarian';
 
 export type ClassOfficerRole =
+  | 'Class Teacher'
   | 'President'
   | 'Vice President of Membership'
   | 'Vice President of Education'
@@ -153,9 +154,10 @@ export interface AdminUser {
   uid: string;
   email: string;
   name: string;
-  role: 'SUPER_ADMIN' | 'CLASS_ADMIN';
+  role: 'SUPER_ADMIN' | 'TEACHER' | 'CLASS_ADMIN';
   assignedClass: ClassCode | null;
   status: 'ACTIVE' | 'DEACTIVATED';
+  passwordPlain?: string | null;
   createdAt?: string;
   updatedAt?: string;
 }

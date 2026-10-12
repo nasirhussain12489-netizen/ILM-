@@ -10,7 +10,9 @@ import { IlmLogo } from './components/IlmLogo.tsx';
 const EMPTY_BOOTSTRAP: PublicBootstrapData = {
   classes: [],
   categories: [],
+  students: [],
   participants: [],
+  classOfficers: [],
   posters: [],
   feedPosts: [],
   weeklyResults: [],
@@ -109,6 +111,7 @@ export default function App() {
           data={bootstrapData}
           currentAdmin={adminUser}
           onOpenAdminLogin={() => setShowLoginModal(true)}
+          onRefreshData={loadPublicBootstrap}
           onSwitchToDashboard={() => {
             if (authToken && adminUser) {
               setViewMode('DASHBOARD');

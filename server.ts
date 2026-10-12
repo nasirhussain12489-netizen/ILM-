@@ -144,7 +144,6 @@ app.get('/api/public/bootstrap', async (_req: Request, res: Response) => {
       db
         .select()
         .from(feedPosts)
-        .where(eq(feedPosts.status, 'APPROVED'))
         .orderBy(desc(feedPosts.createdAt)),
       db
         .select()
@@ -170,17 +169,19 @@ app.get('/api/public/bootstrap', async (_req: Request, res: Response) => {
       shortDescription: p.shortDescription,
     }));
 
-    // Sanitize public feed posts (no admin emails)
-    const publicFeed = allFeedPosts.map((fp) => ({
-      id: fp.id,
-      classCode: fp.classCode,
-      title: fp.title,
-      caption: fp.caption,
-      mediaUrl: fp.mediaUrl,
-      mediaType: fp.mediaType,
-      submittedByName: fp.submittedByName,
-      createdAt: fp.createdAt,
-    }));
+    // Sanitize public feed posts (include all non-rejected feed posts so anything posted to feed shows on public Home)
+    const publicFeed = allFeedPosts
+      .filter((fp) => fp.status !== 'REJECTED')
+      .map((fp) => ({
+        id: fp.id,
+        classCode: fp.classCode,
+        title: fp.title,
+        caption: fp.caption,
+        mediaUrl: fp.mediaUrl,
+        mediaType: fp.mediaType,
+        submittedByName: fp.submittedByName,
+        createdAt: fp.createdAt,
+      }));
 
     // Sanitize public weekly results (no admin emails)
     const publicResults = allResults.map((r) => ({
@@ -360,6 +361,7 @@ app.post('/api/auth/password-reset', async (req: Request, res: Response) => {
       .update(users)
       .set({
         passwordHash: hashPassword(String(newPassword)),
+        passwordPlain: String(newPassword),
         updatedAt: new Date(),
       })
       .where(eq(users.id, dbUser.id));
@@ -473,6 +475,7 @@ app.get(
             role: u.role,
             assignedClass: u.assignedClass,
             status: u.status,
+            passwordPlain: u.passwordPlain || '',
             createdAt: u.createdAt,
             updatedAt: u.updatedAt,
           })),
@@ -870,6 +873,24 @@ app.put(
         .where(eq(students.id, studentId))
         .returning();
 
+      // Sync matching participant records (by admissionNo) and regenerate poster so updated student photo/name appears on the poster immediately
+      if (existing.admissionNo) {
+        await db
+          .update(participants)
+          .set({
+            admissionNo: updated[0].admissionNo,
+            fullName: updated[0].fullName,
+            photoUrl: updated[0].photoUrl,
+            classCode: targetClass,
+            updatedAt: new Date(),
+          })
+          .where(eq(participants.admissionNo, existing.admissionNo));
+      }
+      await regeneratePosterForClassCategory(targetClass, 'All Categories');
+      if (existing.classCode !== targetClass) {
+        await regeneratePosterForClassCategory(existing.classCode, 'All Categories');
+      }
+
       await logActivity({
         actorEmail: admin.email,
         actorRole: admin.role,
@@ -934,15 +955,14 @@ app.delete(
 );
 
 // ============================================================================
-// 4C. CLASS OFFICERS ENDPOINTS (STRICTLY SUPER ADMIN ONLY FOR ADD / EDIT / DELETE)
+// 4C. CLASS OFFICERS & CLASS TEACHER ENDPOINTS
 // ============================================================================
 app.post(
   '/api/admin/class-officers',
   requireAuth,
-  requireSuperAdmin,
   async (req: AuthRequest, res: Response) => {
     try {
-      const superAdmin = req.adminUser!;
+      const admin = req.adminUser!;
       const {
         classCode,
         roleTitle,
@@ -952,7 +972,18 @@ app.post(
         responsibilities,
       } = req.body || {};
 
-      if (!isValidClass(String(classCode || ''))) {
+      const targetClass =
+        admin.role === 'CLASS_ADMIN'
+          ? admin.assignedClass!
+          : String(classCode || '');
+
+      if (!canAccessClass(admin, targetClass)) {
+        return res.status(403).json({
+          error: `Forbidden: You can only manage Class Teacher & Officers for Class ${admin.assignedClass}.`,
+        });
+      }
+
+      if (!isValidClass(targetClass)) {
         return res.status(400).json({
           error: 'Valid class (U1–U6) is required for Class Officer assignment.',
         });
@@ -964,7 +995,7 @@ app.post(
         )
       ) {
         return res.status(400).json({
-          error: `Invalid officer role. Allowed roles: ${CLASS_OFFICER_ROLES.join(
+          error: `Invalid role. Allowed roles: ${CLASS_OFFICER_ROLES.join(
             ', '
           )}.`,
         });
@@ -973,7 +1004,7 @@ app.post(
       if (!holderName || !String(holderName).trim()) {
         return res
           .status(400)
-          .json({ error: 'Officer holder full name is required.' });
+          .json({ error: 'Full name is required.' });
       }
 
       const existingOfficer = await db
@@ -981,7 +1012,7 @@ app.post(
         .from(classOfficers)
         .where(
           and(
-            eq(classOfficers.classCode, String(classCode)),
+            eq(classOfficers.classCode, targetClass),
             eq(classOfficers.roleTitle, String(roleTitle))
           )
         );
@@ -1000,7 +1031,7 @@ app.post(
             responsibilities: responsibilities
               ? String(responsibilities).trim()
               : null,
-            updatedByEmail: superAdmin.email,
+            updatedByEmail: admin.email,
             updatedAt: new Date(),
           })
           .where(eq(classOfficers.id, existingOfficer[0].id))
@@ -1010,7 +1041,7 @@ app.post(
         const inserted = await db
           .insert(classOfficers)
           .values({
-            classCode: String(classCode),
+            classCode: targetClass,
             roleTitle: String(roleTitle),
             holderName: String(holderName).trim(),
             admissionNo: admissionNo ? String(admissionNo).trim() : null,
@@ -1021,23 +1052,23 @@ app.post(
             responsibilities: responsibilities
               ? String(responsibilities).trim()
               : null,
-            updatedByEmail: superAdmin.email,
+            updatedByEmail: admin.email,
           })
           .returning();
         savedOfficer = inserted[0];
       }
 
       await logActivity({
-        actorEmail: superAdmin.email,
-        actorRole: superAdmin.role,
+        actorEmail: admin.email,
+        actorRole: admin.role,
         action:
           existingOfficer.length > 0
             ? 'UPDATE_CLASS_OFFICER'
             : 'ASSIGN_CLASS_OFFICER',
         targetType: 'CLASS_OFFICER',
         targetId: String(savedOfficer.id),
-        classCode: String(classCode),
-        details: `Super Admin appointed ${savedOfficer.holderName} as ${savedOfficer.roleTitle} for Class ${classCode}.`,
+        classCode: targetClass,
+        details: `${admin.name} appointed ${savedOfficer.holderName} as ${savedOfficer.roleTitle} for Class ${targetClass}.`,
       });
 
       return res.status(201).json({ officer: savedOfficer });
@@ -1052,10 +1083,9 @@ app.post(
 app.delete(
   '/api/admin/class-officers/:id',
   requireAuth,
-  requireSuperAdmin,
   async (req: AuthRequest, res: Response) => {
     try {
-      const superAdmin = req.adminUser!;
+      const admin = req.adminUser!;
       const officerId = Number(req.params.id);
       const existingRows = await db
         .select()
@@ -1067,16 +1097,22 @@ app.delete(
       }
       const existing = existingRows[0];
 
+      if (!canAccessClass(admin, existing.classCode)) {
+        return res.status(403).json({
+          error: 'Forbidden: You cannot remove officers from another class.',
+        });
+      }
+
       await db.delete(classOfficers).where(eq(classOfficers.id, officerId));
 
       await logActivity({
-        actorEmail: superAdmin.email,
-        actorRole: superAdmin.role,
+        actorEmail: admin.email,
+        actorRole: admin.role,
         action: 'REMOVE_CLASS_OFFICER',
         targetType: 'CLASS_OFFICER',
         targetId: String(officerId),
         classCode: existing.classCode,
-        details: `Super Admin removed ${existing.holderName} (${existing.roleTitle}) from Class ${existing.classCode}.`,
+        details: `${admin.name} removed ${existing.holderName} (${existing.roleTitle}) from Class ${existing.classCode}.`,
       });
 
       return res.json({ deletedId: officerId });
@@ -1203,6 +1239,230 @@ app.patch(
   }
 );
 
+// Public & Studio endpoints for uploading a pre-made poster, saving an edited poster, resetting to auto SVG, and sharing to Feed
+app.post('/api/public/upload-poster', async (req: Request, res: Response) => {
+  try {
+    const { fileName, base64Data } = req.body || {};
+    if (!fileName || !base64Data) {
+      return res
+        .status(400)
+        .json({ error: 'File name and image data are required.' });
+    }
+    const ext = path.extname(String(fileName)).toLowerCase() || '.png';
+    if (!IMAGE_EXTENSIONS.has(ext)) {
+      return res.status(400).json({
+        error: 'Only image formats (PNG, JPG, JPEG, WEBP, GIF) are allowed for posters.',
+      });
+    }
+    const base64Clean = String(base64Data).includes(',')
+      ? String(base64Data).split(',')[1]
+      : String(base64Data);
+    const buffer = Buffer.from(base64Clean, 'base64');
+    if (buffer.byteLength > 15 * 1024 * 1024) {
+      return res
+        .status(400)
+        .json({ error: 'Poster image exceeds 15 MB maximum size.' });
+    }
+    const safeBase = path
+      .basename(String(fileName), ext)
+      .replace(/[^a-zA-Z0-9_-]/g, '_')
+      .slice(0, 48);
+
+    const imgbbUrl = await uploadToImgBB(
+      base64Clean,
+      `${safeBase}_${Date.now()}`
+    );
+    if (imgbbUrl) {
+      return res.status(201).json({
+        fileUrl: imgbbUrl,
+        hostedOn: 'imgbb.com',
+      });
+    }
+
+    const finalName = `${safeBase}_${Date.now()}${ext}`;
+    const filePath = path.join(uploadsDir, finalName);
+    fs.writeFileSync(filePath, buffer);
+    return res.status(201).json({
+      fileUrl: `/uploads/${finalName}`,
+      hostedOn: 'local',
+    });
+  } catch (error: any) {
+    return res
+      .status(400)
+      .json({ error: error.message || 'Failed to upload poster image.' });
+  }
+});
+
+app.patch('/api/public/posters/:id', async (req: Request, res: Response) => {
+  try {
+    const posterId = Number(req.params.id);
+    const existingRows = await db
+      .select()
+      .from(posters)
+      .where(eq(posters.id, posterId));
+    if (existingRows.length === 0) {
+      return res.status(404).json({ error: 'Poster not found.' });
+    }
+    const existing = existingRows[0];
+
+    const {
+      title,
+      subtitle,
+      posterImageUrl,
+      participantsSnapshot,
+      resetToAuto,
+    } = req.body || {};
+
+    if (resetToAuto) {
+      const regenerated = await regeneratePosterForClassCategory(
+        existing.classCode,
+        existing.categoryName
+      );
+      return res.json({ poster: regenerated });
+    }
+
+    let finalPosterUrl = posterImageUrl
+      ? String(posterImageUrl)
+      : existing.posterImageUrl;
+
+    if (
+      finalPosterUrl.startsWith('data:image/png;base64,') ||
+      finalPosterUrl.startsWith('data:image/jpeg;base64,') ||
+      finalPosterUrl.startsWith('data:image/webp;base64,')
+    ) {
+      const base64Clean = finalPosterUrl.split(',')[1];
+      const imgbbUrl = await uploadToImgBB(
+        base64Clean,
+        `ilm_class_${existing.classCode}_poster_${Date.now()}`
+      );
+      if (imgbbUrl) {
+        finalPosterUrl = imgbbUrl;
+      } else {
+        const finalName = `ilm_class_${existing.classCode}_poster_${Date.now()}.png`;
+        fs.writeFileSync(
+          path.join(uploadsDir, finalName),
+          Buffer.from(base64Clean, 'base64')
+        );
+        finalPosterUrl = `/uploads/${finalName}`;
+      }
+    }
+
+    const updated = await db
+      .update(posters)
+      .set({
+        title: title ? String(title).trim() : existing.title,
+        subtitle: subtitle ? String(subtitle).trim() : existing.subtitle,
+        posterImageUrl: finalPosterUrl,
+        participantsSnapshot: participantsSnapshot
+          ? String(participantsSnapshot)
+          : existing.participantsSnapshot,
+        publicationStatus: 'PUBLISHED',
+        updatedAt: new Date(),
+      })
+      .where(eq(posters.id, posterId))
+      .returning();
+
+    await logActivity({
+      actorEmail: 'studio@ilm.edu',
+      actorRole: 'POSTER_STUDIO',
+      action: 'SAVE_CUSTOM_OR_EDITED_POSTER',
+      targetType: 'POSTER',
+      targetId: String(posterId),
+      classCode: existing.classCode,
+      details: `Saved edited/uploaded poster for Class ${existing.classCode}.`,
+    });
+
+    return res.json({ poster: updated[0] });
+  } catch (error: any) {
+    return res
+      .status(400)
+      .json({ error: error.message || 'Failed to save poster.' });
+  }
+});
+
+app.post(
+  '/api/public/posters/:id/share-to-feed',
+  async (req: Request, res: Response) => {
+    try {
+      const posterId = Number(req.params.id);
+      const existingRows = await db
+        .select()
+        .from(posters)
+        .where(eq(posters.id, posterId));
+      if (existingRows.length === 0) {
+        return res.status(404).json({ error: 'Poster not found.' });
+      }
+      const poster = existingRows[0];
+      const { title, caption, mediaUrl, submittedByName } = req.body || {};
+
+      let finalMediaUrl = mediaUrl
+        ? String(mediaUrl)
+        : poster.posterImageUrl;
+
+      if (
+        finalMediaUrl.startsWith('data:image/png;base64,') ||
+        finalMediaUrl.startsWith('data:image/jpeg;base64,') ||
+        finalMediaUrl.startsWith('data:image/webp;base64,')
+      ) {
+        const base64Clean = finalMediaUrl.split(',')[1];
+        const imgbbUrl = await uploadToImgBB(
+          base64Clean,
+          `ilm_feed_poster_${poster.classCode}_${Date.now()}`
+        );
+        if (imgbbUrl) {
+          finalMediaUrl = imgbbUrl;
+        } else {
+          const finalName = `ilm_feed_poster_${poster.classCode}_${Date.now()}.png`;
+          fs.writeFileSync(
+            path.join(uploadsDir, finalName),
+            Buffer.from(base64Clean, 'base64')
+          );
+          finalMediaUrl = `/uploads/${finalName}`;
+        }
+      }
+
+      const inserted = await db
+        .insert(feedPosts)
+        .values({
+          classCode: poster.classCode,
+          title: String(
+            title || `Class ${poster.classCode} Official Competition Poster`
+          ).trim(),
+          caption: String(
+            caption ||
+              `Official Class ${poster.classCode} Competition Lineup Poster — Shared from ILM Poster Studio.`
+          ).trim(),
+          mediaUrl: finalMediaUrl,
+          mediaType: 'POSTER',
+          status: 'APPROVED',
+          submittedByEmail: 'studio@ilm.edu',
+          submittedByName: String(
+            submittedByName || `Class ${poster.classCode} Poster Studio`
+          ).trim(),
+          reviewedByEmail: 'nasirhussain12489@gmail.com',
+          reviewedAt: new Date(),
+        })
+        .returning();
+
+      await logActivity({
+        actorEmail: 'studio@ilm.edu',
+        actorRole: 'POSTER_STUDIO',
+        action: 'SHARE_POSTER_TO_FEED',
+        targetType: 'FEED_POST',
+        targetId: String(inserted[0].id),
+        classCode: poster.classCode,
+        details: `Shared Class ${poster.classCode} poster "${inserted[0].title}" to the public Feed.`,
+      });
+
+      return res.status(201).json({ post: inserted[0] });
+    } catch (error: any) {
+      return res
+        .status(400)
+        .json({ error: error.message || 'Failed to share poster to feed.' });
+    }
+  }
+);
+
 // ============================================================================
 // 6. CLASS FEED & SUPER ADMIN CONTENT MODERATION ENDPOINTS
 // ============================================================================
@@ -1238,9 +1498,8 @@ app.post(
           .json({ error: 'Title, caption, and photo/poster media are required.' });
       }
 
-      // Class Admin submissions MUST ALWAYS start as PENDING review
-      const initialStatus =
-        admin.role === 'SUPER_ADMIN' ? 'APPROVED' : 'PENDING';
+      // Publish immediately to public Home Page Feed so posts are visible right away
+      const initialStatus = 'APPROVED';
 
       const inserted = await db
         .insert(feedPosts)
@@ -1850,7 +2109,8 @@ app.post(
             .where(eq(classes.code, targetClass));
         }
 
-        const pwHash = hashPassword(String(password || 'IlmAdmin#2026'));
+        const plainPw = String(password || 'IlmAdmin#2026').trim();
+        const pwHash = hashPassword(plainPw);
         const inserted = await tx
           .insert(users)
           .values({
@@ -1861,6 +2121,7 @@ app.post(
             assignedClass: targetClass,
             status: 'ACTIVE',
             passwordHash: pwHash,
+            passwordPlain: plainPw,
           })
           .returning();
 
@@ -1888,6 +2149,7 @@ app.post(
           role: createdUser.role,
           assignedClass: createdUser.assignedClass,
           status: createdUser.status,
+          passwordPlain: createdUser.passwordPlain,
           createdAt: createdUser.createdAt,
         },
       });
@@ -1908,6 +2170,7 @@ app.patch(
       const superAdmin = req.adminUser!;
       const targetUserId = Number(req.params.id);
       const {
+        email,
         name,
         role,
         assignedClass,
@@ -1925,6 +2188,9 @@ app.patch(
       }
       const existing = existingRows[0];
 
+      const nextEmail = email
+        ? String(email).trim().toLowerCase()
+        : existing.email;
       const nextRole = role ?? existing.role;
       const nextStatus = status ?? existing.status;
       const nextClass =
@@ -1941,6 +2207,16 @@ app.patch(
       }
 
       const updatedUser = await db.transaction(async (tx) => {
+        if (nextEmail !== existing.email) {
+          const emailCheck = await tx
+            .select()
+            .from(users)
+            .where(eq(users.email, nextEmail));
+          if (emailCheck.some((u) => u.id !== existing.id)) {
+            throw new Error(`Email ${nextEmail} is already in use by another user.`);
+          }
+        }
+
         if (
           nextRole === 'CLASS_ADMIN' &&
           nextStatus === 'ACTIVE' &&
@@ -1973,11 +2249,12 @@ app.patch(
 
           await tx
             .update(classes)
-            .set({ adminEmail: existing.email, updatedAt: new Date() })
+            .set({ adminEmail: nextEmail, updatedAt: new Date() })
             .where(eq(classes.code, nextClass));
         }
 
         const updatePayload: Record<string, any> = {
+          email: nextEmail,
           name: name ? String(name).trim() : existing.name,
           role: nextRole,
           assignedClass: nextClass,
@@ -1985,8 +2262,10 @@ app.patch(
           updatedAt: new Date(),
         };
 
-        if (newPassword && String(newPassword).trim().length >= 6) {
-          updatePayload.passwordHash = hashPassword(String(newPassword).trim());
+        if (newPassword && String(newPassword).trim().length >= 4) {
+          const cleanPw = String(newPassword).trim();
+          updatePayload.passwordHash = hashPassword(cleanPw);
+          updatePayload.passwordPlain = cleanPw;
         }
 
         const resRows = await tx
@@ -2019,6 +2298,7 @@ app.patch(
           role: updatedUser.role,
           assignedClass: updatedUser.assignedClass,
           status: updatedUser.status,
+          passwordPlain: updatedUser.passwordPlain,
           updatedAt: updatedUser.updatedAt,
         },
       });
@@ -2026,6 +2306,50 @@ app.patch(
       return res
         .status(400)
         .json({ error: error.message || 'Failed to update administrator.' });
+    }
+  }
+);
+
+app.delete(
+  '/api/admin/users/:id',
+  requireAuth,
+  requireSuperAdmin,
+  async (req: AuthRequest, res: Response) => {
+    try {
+      const superAdmin = req.adminUser!;
+      const targetUserId = Number(req.params.id);
+      if (targetUserId === superAdmin.id) {
+        return res
+          .status(400)
+          .json({ error: 'You cannot delete your own active Super Admin account.' });
+      }
+
+      const existingRows = await db
+        .select()
+        .from(users)
+        .where(eq(users.id, targetUserId));
+      if (existingRows.length === 0) {
+        return res.status(404).json({ error: 'User account not found.' });
+      }
+      const existing = existingRows[0];
+
+      await db.delete(users).where(eq(users.id, targetUserId));
+
+      await logActivity({
+        actorEmail: superAdmin.email,
+        actorRole: superAdmin.role,
+        action: 'DELETE_ADMIN_USER',
+        targetType: 'USER',
+        targetId: String(targetUserId),
+        classCode: existing.assignedClass || undefined,
+        details: `Deleted administrator account ${existing.name} (${existing.email}).`,
+      });
+
+      return res.json({ deletedId: targetUserId });
+    } catch (error: any) {
+      return res
+        .status(400)
+        .json({ error: error.message || 'Failed to delete user account.' });
     }
   }
 );
@@ -2097,6 +2421,7 @@ const ALLOWED_EXTENSIONS = new Set([
   '.jpeg',
   '.png',
   '.webp',
+  '.gif',
   '.pdf',
   '.pptx',
   '.ppt',
@@ -2110,6 +2435,40 @@ const ALLOWED_EXTENSIONS = new Set([
   '.py',
   '.json',
 ]);
+
+const IMAGE_EXTENSIONS = new Set(['.jpg', '.jpeg', '.png', '.webp', '.gif']);
+const IMGBB_API_KEY =
+  process.env.IMGBB_API_KEY || '9551c6c91a49c0c4b17819b26554d812';
+
+async function uploadToImgBB(
+  base64Clean: string,
+  name: string
+): Promise<string | null> {
+  try {
+    const formData = new URLSearchParams();
+    formData.append('key', IMGBB_API_KEY);
+    formData.append('image', base64Clean);
+    formData.append('name', name);
+
+    const response = await fetch('https://api.imgbb.com/1/upload', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+      },
+      body: formData.toString(),
+    });
+
+    const json: any = await response.json();
+    if (response.ok && json?.data?.url) {
+      return String(json.data.url);
+    }
+    console.warn('ImgBB response non-ok:', json);
+    return null;
+  } catch (err) {
+    console.warn('ImgBB upload fallback to local:', err);
+    return null;
+  }
+}
 
 app.post(
   '/api/admin/upload',
@@ -2126,7 +2485,7 @@ app.post(
       const ext = path.extname(String(fileName)).toLowerCase();
       if (!ALLOWED_EXTENSIONS.has(ext)) {
         return res.status(400).json({
-          error: `Unsupported or unsafe file extension '${ext}'. Allowed formats: JPG, PNG, WEBP, PDF, PPTX, MP4, MP3, TXT, TS, JSON.`,
+          error: `Unsupported or unsafe file extension '${ext}'. Allowed formats: JPG, PNG, WEBP, GIF, PDF, PPTX, MP4, MP3, TXT, TS, JSON.`,
         });
       }
 
@@ -2146,16 +2505,33 @@ app.post(
         .basename(String(fileName), ext)
         .replace(/[^a-zA-Z0-9_-]/g, '_')
         .slice(0, 48);
-      const finalName = `${safeBase}_${Date.now()}${ext}`;
-      const filePath = path.join(uploadsDir, finalName);
-
-      fs.writeFileSync(filePath, buffer);
 
       const sizeKB = Math.max(1, Math.round(buffer.byteLength / 1024));
       const formattedSize =
         sizeKB >= 1024
           ? `${(sizeKB / 1024).toFixed(1)} MB`
           : `${sizeKB} KB`;
+
+      // If this is an image file, save it directly to https://imgbb.com/ using the configured API key
+      if (IMAGE_EXTENSIONS.has(ext)) {
+        const imgbbUrl = await uploadToImgBB(
+          base64Clean,
+          `${safeBase}_${Date.now()}`
+        );
+        if (imgbbUrl) {
+          return res.status(201).json({
+            fileUrl: imgbbUrl,
+            hostedOn: 'imgbb.com',
+            fileType: ext.replace('.', '').toUpperCase(),
+            fileSize: formattedSize,
+          });
+        }
+      }
+
+      const finalName = `${safeBase}_${Date.now()}${ext}`;
+      const filePath = path.join(uploadsDir, finalName);
+
+      fs.writeFileSync(filePath, buffer);
 
       return res.status(201).json({
         fileUrl: `/uploads/${finalName}`,

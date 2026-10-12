@@ -1,49 +1,112 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
+  AlignCenter,
+  AlignJustify,
+  AlignLeft,
+  AlignRight,
+  ArrowDown,
+  ArrowUp,
   Brush,
   Check,
+  Circle,
+  Copy,
+  Crop,
   Download,
+  Droplet,
   Eraser,
   Eye,
   EyeOff,
+  FlipHorizontal,
+  FlipVertical,
   Grid,
+  Hand,
+  History,
   Image as ImageIcon,
   Layers,
   LayoutGrid,
+  Lock,
+  Maximize2,
   Move,
+  PaintBucket,
   Palette,
+  Pipette,
   Plus,
   Redo2,
   RefreshCw,
+  RotateCcw,
   Save,
   Send,
+  Share2,
   Sliders,
   Sparkles,
+  Square,
+  Stamp,
+  Sun,
   Trash2,
   Type,
   Undo2,
+  Unlock,
   Upload,
+  Wand2,
   X,
   ZoomIn,
   ZoomOut,
 } from 'lucide-react';
-import { PosterRecord } from '../types.ts';
+import { PosterRecord, ParticipantRecord } from '../types.ts';
 
-interface StudioParticipantCard {
+export type PhotoshopToolId =
+  | 'MOVE'
+  | 'MARQUEE'
+  | 'CROP'
+  | 'EYEDROPPER'
+  | 'BRUSH'
+  | 'CLONE_HEAL'
+  | 'ERASER'
+  | 'GRADIENT_BUCKET'
+  | 'BLUR_SHARPEN'
+  | 'DODGE_BURN'
+  | 'TEXT'
+  | 'SHAPE'
+  | 'IMAGE_LAYER'
+  | 'STAMP'
+  | 'HAND'
+  | 'ZOOM';
+
+export type BlendModeType =
+  | 'source-over'
+  | 'multiply'
+  | 'screen'
+  | 'overlay'
+  | 'darken'
+  | 'lighten'
+  | 'color-dodge'
+  | 'luminosity';
+
+export interface StudioParticipantCard {
   id: number;
   fullName: string;
   photoUrl: string;
   classCode: string;
   categoryName: string;
+  ownTopic?: string;
   x: number;
   y: number;
   width: number;
   height: number;
-  visible: boolean;
+  rotation: number;
+  opacity: number;
   photoScale: number;
+  photoOffsetX: number;
+  photoOffsetY: number;
+  flipX: boolean;
+  flipY: boolean;
+  visible: boolean;
+  locked: boolean;
+  borderColor?: string;
+  nameBgColor?: string;
 }
 
-interface CustomOverlayLayer {
+export interface CustomOverlayLayer {
   id: string;
   type: 'TEXT' | 'BADGE';
   text: string;
@@ -51,23 +114,101 @@ interface CustomOverlayLayer {
   y: number;
   fontSize: number;
   color: string;
+  strokeColor: string;
+  strokeWidth: number;
+  bgColor: string;
+  showBgPill: boolean;
   fontFamily: string;
+  bold: boolean;
+  italic: boolean;
+  rotation: number;
+  opacity: number;
+  blendMode: BlendModeType;
   visible: boolean;
+  locked: boolean;
 }
 
-interface BrushStroke {
+export interface StudioShapeLayer {
+  id: string;
+  shapeType:
+    | 'ROUNDED_RECT'
+    | 'RECTANGLE'
+    | 'CIRCLE'
+    | 'ARCH'
+    | 'LINE'
+    | 'STAR'
+    | 'GOLD_RIBBON';
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  fillColor: string;
+  fillOpacity: number;
+  strokeColor: string;
+  strokeWidth: number;
+  rotation: number;
+  blendMode: BlendModeType;
+  visible: boolean;
+  locked: boolean;
+}
+
+export interface StudioImageLayer {
+  id: string;
+  name: string;
+  imageUrl: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  rotation: number;
+  opacity: number;
+  cornerRadius: number;
+  borderWidth: number;
+  borderColor: string;
+  flipX: boolean;
+  flipY: boolean;
+  blendMode: BlendModeType;
+  visible: boolean;
+  locked: boolean;
+}
+
+export interface BrushStroke {
   points: Array<{ x: number; y: number }>;
   color: string;
   size: number;
   opacity: number;
+  brushStyle:
+    | 'SOFT_ROUND'
+    | 'HARD_ROUND'
+    | 'CALLIGRAPHY'
+    | 'GOLD_SHIMMER'
+    | 'NEON_GLOW'
+    | 'SPRAY'
+    | 'HEAL_PATCH'
+    | 'DODGE_LIGHT'
+    | 'BURN_SHADOW'
+    | 'BLUR_GLOW';
 }
 
-interface StudioStateSnapshot {
+export interface StudioStateSnapshot {
+  historyLabel: string;
+  canvasWidth: number;
+  canvasHeight: number;
   title: string;
   subtitle: string;
   motto: string;
-  bgTheme: 'OBSIDIAN_GOLD' | 'ROYAL_NAVY' | 'IMPERIAL_EMERALD' | 'VELVET_CRIMSON' | 'CUSTOM';
+  programDetails: string;
+  bgTheme:
+    | 'BOTANICAL_BLUSH'
+    | 'UPLOADED_POSTER'
+    | 'OBSIDIAN_GOLD'
+    | 'ROYAL_NAVY'
+    | 'IMPERIAL_EMERALD'
+    | 'VELVET_CRIMSON';
   customBgUrl: string | null;
+  customBgOpacity: number;
+  showCompartmentBoxes: boolean;
+  showHeaderLockup: boolean;
   frameShape: 'ROUNDED' | 'CIRCLE' | 'ARCH' | 'SQUARE';
   borderThickness: number;
   goldGlow: number;
@@ -77,16 +218,22 @@ interface StudioStateSnapshot {
   saturation: number;
   sepia: number;
   hueRotate: number;
+  blurPx: number;
+  exposure: number;
+  noiseGrain: number;
   titleFont: string;
   titleSize: number;
   titleColor: string;
   cards: StudioParticipantCard[];
+  imageLayers: StudioImageLayer[];
+  shapes: StudioShapeLayer[];
   overlays: CustomOverlayLayer[];
   strokes: BrushStroke[];
 }
 
 interface PosterPhotoshopStudioProps {
   poster: PosterRecord;
+  liveParticipants?: ParticipantRecord[];
   onClose: () => void;
   onSavePoster: (
     posterId: number,
@@ -113,6 +260,221 @@ const CATEGORY_ORDER = [
   'Grammarian',
 ];
 
+function normalizeCat(cat: string): string {
+  const c = (cat || '').trim().toLowerCase();
+  if (c === 'qirath' || c === 'qirat') return 'Qirat';
+  if (c === 'singer' || c === 'singers' || c === 'naat') return 'Naat';
+  if (c === 'speaker' || c === 'speakers' || c === 'speech') return 'Speech';
+  if (
+    c === 'evaluator' ||
+    c === 'evaluators' ||
+    c === 'evolution' ||
+    c === 'evaluation'
+  )
+    return 'Evolution';
+  if (c === 'ah counter' || c === 'aah counter' || c === 'ah-counter')
+    return 'Aah Counter';
+  if (c === 'table topic' || c === 'table topics') return 'Table Topic';
+  if (c === 'marshal' || c === 'marshall') return 'Marshal';
+  if (c === 'grammarian') return 'Grammarian';
+  return cat;
+}
+
+// Compute Official 8-Compartment Positions on 1600x1130 Canvas (matching reference poster design)
+function computeCompartmentCards(
+  rawParticipants: Array<{
+    id: number;
+    fullName: string;
+    photoUrl: string;
+    classCode: string;
+    categoryName: string;
+    ownTopic?: string | null;
+  }>
+): StudioParticipantCard[] {
+  const result: StudioParticipantCard[] = [];
+  const byCat = (target: string) =>
+    rawParticipants.filter((p) => normalizeCat(p.categoryName) === target);
+
+  // 1. Marshal (Top-left compartment)
+  const marshals = byCat('Marshal');
+  marshals.slice(0, 1).forEach((p) => {
+    result.push({
+      id: p.id,
+      fullName: p.fullName,
+      photoUrl: p.photoUrl,
+      classCode: p.classCode,
+      categoryName: 'Marshal',
+      ownTopic: p.ownTopic || undefined,
+      x: 112,
+      y: 282,
+      width: 245,
+      height: 280,
+      rotation: 0,
+      opacity: 1,
+      photoScale: 1,
+      photoOffsetX: 0,
+      photoOffsetY: 0,
+      flipX: false,
+      flipY: false,
+      visible: true,
+      locked: false,
+    });
+  });
+
+  // 2. Qirat (Top-center compartment)
+  const qirats = byCat('Qirat');
+  qirats.slice(0, 1).forEach((p) => {
+    result.push({
+      id: p.id,
+      fullName: p.fullName,
+      photoUrl: p.photoUrl,
+      classCode: p.classCode,
+      categoryName: 'Qirat',
+      ownTopic: p.ownTopic || undefined,
+      x: 560,
+      y: 282,
+      width: 245,
+      height: 280,
+      rotation: 0,
+      opacity: 1,
+      photoScale: 1,
+      photoOffsetX: 0,
+      photoOffsetY: 0,
+      flipX: false,
+      flipY: false,
+      visible: true,
+      locked: false,
+    });
+  });
+
+  // 3. Grammarian, Aah Counter, Table Topic (Top-right compartment)
+  const grammarians = byCat('Grammarian').slice(0, 1);
+  const aahCounters = byCat('Aah Counter').slice(0, 1);
+  const tableTopics = byCat('Table Topic').slice(0, 5);
+
+  grammarians.forEach((p) => {
+    result.push({
+      id: p.id,
+      fullName: p.fullName,
+      photoUrl: p.photoUrl,
+      classCode: p.classCode,
+      categoryName: 'Grammarian',
+      ownTopic: p.ownTopic || undefined,
+      x: 1020,
+      y: 266,
+      width: 145,
+      height: 158,
+      rotation: 0,
+      opacity: 1,
+      photoScale: 1,
+      photoOffsetX: 0,
+      photoOffsetY: 0,
+      flipX: false,
+      flipY: false,
+      visible: true,
+      locked: false,
+    });
+  });
+
+  aahCounters.forEach((p) => {
+    result.push({
+      id: p.id,
+      fullName: p.fullName,
+      photoUrl: p.photoUrl,
+      classCode: p.classCode,
+      categoryName: 'Aah Counter',
+      ownTopic: p.ownTopic || undefined,
+      x: 1185,
+      y: 266,
+      width: 145,
+      height: 158,
+      rotation: 0,
+      opacity: 1,
+      photoScale: 1,
+      photoOffsetX: 0,
+      photoOffsetY: 0,
+      flipX: false,
+      flipY: false,
+      visible: true,
+      locked: false,
+    });
+  });
+
+  tableTopics.forEach((p, idx) => {
+    const col = idx % 3;
+    const row = Math.floor(idx / 3);
+    result.push({
+      id: p.id,
+      fullName: p.fullName,
+      photoUrl: p.photoUrl,
+      classCode: p.classCode,
+      categoryName: 'Table Topic',
+      ownTopic: p.ownTopic || undefined,
+      x: 1015 + col * 158,
+      y: 432 + row * 82,
+      width: 145,
+      height: 78,
+      rotation: 0,
+      opacity: 1,
+      photoScale: 1,
+      photoOffsetX: 0,
+      photoOffsetY: 0,
+      flipX: false,
+      flipY: false,
+      visible: true,
+      locked: false,
+    });
+  });
+
+  // Helper for Bottom 3 Compartments (Speakers, Singers/Naat, Evaluators - up to 5 each)
+  const placeBottomFive = (
+    items: typeof rawParticipants,
+    catLabel: string,
+    compX: number,
+    compY: number,
+    compW: number
+  ) => {
+    const positions = [
+      { x: compX + 26, y: compY + 62, w: 185, h: 132 },
+      { x: compX + compW - 211, y: compY + 62, w: 185, h: 132 },
+      { x: compX + 26, y: compY + 206, w: 185, h: 132 },
+      { x: compX + compW - 211, y: compY + 206, w: 185, h: 132 },
+      { x: compX + Math.round((compW - 200) / 2), y: compY + 348, w: 200, h: 126 },
+    ];
+    items.slice(0, 5).forEach((p, i) => {
+      const pos = positions[i] || positions[0];
+      result.push({
+        id: p.id,
+        fullName: p.fullName,
+        photoUrl: p.photoUrl,
+        classCode: p.classCode,
+        categoryName: catLabel,
+        ownTopic: p.ownTopic || undefined,
+        x: pos.x,
+        y: pos.y,
+        width: pos.w,
+        height: pos.h,
+        rotation: 0,
+        opacity: 1,
+        photoScale: 1,
+        photoOffsetX: 0,
+        photoOffsetY: 0,
+        flipX: false,
+        flipY: false,
+        visible: true,
+        locked: false,
+      });
+    });
+  };
+
+  placeBottomFive(byCat('Speech'), 'Speech', 60, 600, 440);
+  placeBottomFive(byCat('Naat'), 'Naat', 540, 600, 480);
+  placeBottomFive(byCat('Evolution'), 'Evolution', 1060, 600, 480);
+
+  return result;
+}
+
+// Compute Uniform Grid Layout across Canvas
 function computeGridCards(
   rawParticipants: Array<{
     id: number;
@@ -120,12 +482,14 @@ function computeGridCards(
     photoUrl: string;
     classCode: string;
     categoryName: string;
+    ownTopic?: string | null;
   }>,
-  forcedCols?: number
+  forcedCols?: number,
+  canvasWidth = 1600
 ): StudioParticipantCard[] {
   const sorted = [...rawParticipants].sort((a, b) => {
-    const idxA = CATEGORY_ORDER.indexOf(a.categoryName);
-    const idxB = CATEGORY_ORDER.indexOf(b.categoryName);
+    const idxA = CATEGORY_ORDER.indexOf(normalizeCat(a.categoryName));
+    const idxB = CATEGORY_ORDER.indexOf(normalizeCat(b.categoryName));
     const orderA = idxA === -1 ? 99 : idxA;
     const orderB = idxB === -1 ? 99 : idxB;
     if (orderA !== orderB) return orderA - orderB;
@@ -135,43 +499,23 @@ function computeGridCards(
   const count = sorted.length;
   const cols =
     forcedCols ||
-    (count <= 1
-      ? 1
-      : count === 2
+    (count <= 2
       ? 2
-      : count <= 4
-      ? 2
-      : count <= 9
+      : count <= 6
       ? 3
       : count <= 12
       ? 4
-      : 5);
+      : count <= 18
+      ? 5
+      : 6);
 
-  const cardWidth =
-    cols === 1
-      ? 330
-      : cols === 2
-      ? 300
-      : cols === 3
-      ? 275
-      : cols === 4
-      ? 232
-      : 194;
-  const cardHeight =
-    cols === 1
-      ? 380
-      : cols === 2
-      ? 315
-      : cols === 3
-      ? 280
-      : cols === 4
-      ? 245
-      : 214;
-  const gapX =
-    cols === 1 ? 0 : cols === 2 ? 60 : cols === 3 ? 40 : cols === 4 ? 26 : 18;
-  const gapY = cols <= 3 ? 26 : 18;
+  const gapX = 24;
+  const gapY = 20;
+  const usableW = canvasWidth - 140;
+  const cardWidth = Math.min(260, Math.floor((usableW - (cols - 1) * gapX) / cols));
+  const cardHeight = Math.round(cardWidth * 0.92);
   const rows = Math.ceil(Math.max(count, 1) / cols);
-  const startY = 390;
+  const startY = 265;
 
   return sorted.map((p, idx) => {
     const row = Math.floor(idx / cols);
@@ -179,57 +523,98 @@ function computeGridCards(
       row === rows - 1 && count % cols !== 0 ? count % cols : cols;
     const col = idx % cols;
     const totalRowW = itemsInRow * cardWidth + (itemsInRow - 1) * gapX;
-    const startX = (1200 - totalRowW) / 2;
+    const startX = (canvasWidth - totalRowW) / 2;
     return {
-      ...p,
+      id: p.id,
+      fullName: p.fullName,
+      photoUrl: p.photoUrl,
+      classCode: p.classCode,
+      categoryName: normalizeCat(p.categoryName),
+      ownTopic: p.ownTopic || undefined,
       x: Math.round(startX + col * (cardWidth + gapX)),
       y: Math.round(startY + row * (cardHeight + gapY)),
       width: cardWidth,
       height: cardHeight,
-      visible: true,
+      rotation: 0,
+      opacity: 1,
       photoScale: 1,
+      photoOffsetX: 0,
+      photoOffsetY: 0,
+      flipX: false,
+      flipY: false,
+      visible: true,
+      locked: false,
     };
   });
 }
 
 export const PosterPhotoshopStudio: React.FC<PosterPhotoshopStudioProps> = ({
   poster,
+  liveParticipants,
   onClose,
   onSavePoster,
   onPostToFeed,
 }) => {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const viewportRef = useRef<HTMLDivElement | null>(null);
   const imageCacheRef = useRef<Map<string, HTMLImageElement>>(new Map());
 
-  const [activeTool, setActiveTool] = useState<
-    'MOVE' | 'TEXT' | 'BRUSH' | 'ERASER'
-  >('MOVE');
+  const [activeTool, setActiveTool] = useState<PhotoshopToolId>('MOVE');
   const [rightTab, setRightTab] = useState<
-    'LAYERS' | 'ADJUSTMENTS' | 'LAYOUT'
+    'LAYERS' | 'ADJUSTMENTS' | 'LAYOUT' | 'HISTORY'
   >('LAYERS');
-  const [zoom, setZoom] = useState(0.58);
+  const [zoom, setZoom] = useState(0.56);
   const [showGrid, setShowGrid] = useState(false);
   const [saving, setSaving] = useState(false);
   const [postingFeed, setPostingFeed] = useState(false);
+  const [uploadingAsset, setUploadingAsset] = useState(false);
   const [feedCaption, setFeedCaption] = useState(
-    `Official ${poster.classCode} Class Competition Poster — Speech, Naat, Evolution, Aah Counter, Marshal & Grammarian Lineup.`
+    `Official Class ${poster.classCode} Competition Poster — Marshal, Qirath, Grammarian, Ah Counter, Table Topic, Speakers, Singers (Naat) & Evaluators.`
   );
   const [showFeedPrompt, setShowFeedPrompt] = useState(false);
+  const [studioNotice, setStudioNotice] = useState<string | null>(null);
 
-  // Brush settings
-  const [brushColor, setBrushColor] = useState('#F3D068');
-  const [brushSize, setBrushSize] = useState(6);
+  // Foreground / Brush / Shape settings
+  const [fgColor, setFgColor] = useState('#C88A65');
+  const [bgColorSwatch, setBgColorSwatch] = useState('#FFF5F5');
+  const [brushSize, setBrushSize] = useState(10);
   const [brushOpacity, setBrushOpacity] = useState(0.9);
+  const [brushStyle, setBrushStyle] =
+    useState<BrushStroke['brushStyle']>('SOFT_ROUND');
+  const [shapePreset, setShapePreset] =
+    useState<StudioShapeLayer['shapeType']>('ROUNDED_RECT');
+  const [stampPreset, setStampPreset] = useState<string>(
+    '🌸 BOTANICAL ROSE SEAL 🌸'
+  );
 
-  // Selection state
+  // Marquee Selection rectangle
+  const [marqueeRect, setMarqueeRect] = useState<{
+    x: number;
+    y: number;
+    w: number;
+    h: number;
+  } | null>(null);
+
+  // Selected Layer IDs
   const [selectedCardId, setSelectedCardId] = useState<number | null>(null);
   const [selectedOverlayId, setSelectedOverlayId] = useState<string | null>(
     null
   );
+  const [selectedShapeId, setSelectedShapeId] = useState<string | null>(null);
+  const [selectedImageLayerId, setSelectedImageLayerId] = useState<
+    string | null
+  >(null);
 
-  // Dragging / Drawing refs
+  // Pointer interaction ref
   const dragRef = useRef<{
-    type: 'CARD' | 'OVERLAY' | 'BRUSH';
+    type:
+      | 'CARD'
+      | 'OVERLAY'
+      | 'SHAPE'
+      | 'IMAGE_LAYER'
+      | 'BRUSH'
+      | 'MARQUEE'
+      | 'PAN';
     id?: number | string;
     startX: number;
     startY: number;
@@ -237,7 +622,14 @@ export const PosterPhotoshopStudio: React.FC<PosterPhotoshopStudioProps> = ({
     origY: number;
   } | null>(null);
 
+  // Resolve initial participants (liveParticipants if provided, else poster.participantsSnapshot)
   const initialParticipants = (() => {
+    if (liveParticipants && liveParticipants.length > 0) {
+      const classFiltered = liveParticipants.filter(
+        (p) => p.classCode === poster.classCode
+      );
+      if (classFiltered.length > 0) return classFiltered;
+    }
     try {
       return JSON.parse(poster.participantsSnapshot || '[]');
     } catch {
@@ -245,27 +637,44 @@ export const PosterPhotoshopStudio: React.FC<PosterPhotoshopStudioProps> = ({
     }
   })();
 
+  const hasInitialCustomImage = Boolean(
+    poster.posterImageUrl &&
+      !poster.posterImageUrl.startsWith('data:image/svg+xml')
+  );
+
   const [studio, setStudio] = useState<StudioStateSnapshot>(() => ({
-    title: poster.title || `${poster.classCode} Class Competition Lineup`,
-    subtitle:
-      poster.subtitle ||
-      `Class ${poster.classCode} Official Competition Roster`,
+    historyLabel: 'Initial Poster Loaded',
+    canvasWidth: 1600,
+    canvasHeight: 1130,
+    title: 'INTEGRATED LEARNING MASTER (ILM)',
+    subtitle: `CLASS ${poster.classCode} OFFICIAL COMPETITION LINEUP`,
     motto: 'Together We Build Better Learners · Learn · Compete · Grow',
-    bgTheme: 'OBSIDIAN_GOLD',
-    customBgUrl: null,
+    programDetails: `DATE: ${new Date().toLocaleDateString('en-GB')}   |   PROGRAM NO: 07   |   VENUE: CLASS ${
+      poster.classCode
+    }`,
+    bgTheme: hasInitialCustomImage ? 'UPLOADED_POSTER' : 'BOTANICAL_BLUSH',
+    customBgUrl: hasInitialCustomImage ? poster.posterImageUrl : null,
+    customBgOpacity: 100,
+    showCompartmentBoxes: !hasInitialCustomImage,
+    showHeaderLockup: !hasInitialCustomImage,
     frameShape: 'ROUNDED',
     borderThickness: 2.5,
-    goldGlow: 45,
-    vignette: 35,
+    goldGlow: 35,
+    vignette: 12,
     brightness: 100,
     contrast: 100,
     saturation: 100,
     sepia: 0,
     hueRotate: 0,
+    blurPx: 0,
+    exposure: 100,
+    noiseGrain: 0,
     titleFont: 'Cinzel',
     titleSize: 38,
-    titleColor: '#FFFFFF',
-    cards: computeGridCards(initialParticipants),
+    titleColor: '#7A4938',
+    cards: computeCompartmentCards(initialParticipants),
+    imageLayers: [],
+    shapes: [],
     overlays: [],
     strokes: [],
   }));
@@ -273,447 +682,842 @@ export const PosterPhotoshopStudio: React.FC<PosterPhotoshopStudioProps> = ({
   const [history, setHistory] = useState<StudioStateSnapshot[]>([]);
   const [redoStack, setRedoStack] = useState<StudioStateSnapshot[]>([]);
 
-  const pushHistory = useCallback((nextState: StudioStateSnapshot) => {
-    setStudio((prev) => {
-      setHistory((h) => [...h.slice(-19), prev]);
-      setRedoStack([]);
-      return nextState;
-    });
-  }, []);
+  const pushHistory = useCallback(
+    (nextState: StudioStateSnapshot, label = 'Edited Poster') => {
+      setStudio((prev) => {
+        setHistory((h) => [...h.slice(-29), prev]);
+        setRedoStack([]);
+        return { ...nextState, historyLabel: label };
+      });
+    },
+    []
+  );
 
-  const handleUndo = () => {
+  const handleUndo = useCallback(() => {
     if (history.length === 0) return;
     const prev = history[history.length - 1];
     setRedoStack((r) => [studio, ...r]);
     setHistory((h) => h.slice(0, -1));
     setStudio(prev);
-  };
+  }, [history, studio]);
 
-  const handleRedo = () => {
+  const handleRedo = useCallback(() => {
     if (redoStack.length === 0) return;
     const next = redoStack[0];
     setHistory((h) => [...h, studio]);
     setRedoStack((r) => r.slice(1));
     setStudio(next);
-  };
+  }, [redoStack, studio]);
+
+  // Keyboard shortcuts for Photoshop tools + Undo/Redo/Delete
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      const tag = (e.target as HTMLElement)?.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') {
+        e.preventDefault();
+        if (e.shiftKey) handleRedo();
+        else handleUndo();
+        return;
+      }
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'y') {
+        e.preventDefault();
+        handleRedo();
+        return;
+      }
+
+      const key = e.key.toLowerCase();
+      if (key === 'v') setActiveTool('MOVE');
+      else if (key === 'm') setActiveTool('MARQUEE');
+      else if (key === 'c') setActiveTool('CROP');
+      else if (key === 'i') setActiveTool('EYEDROPPER');
+      else if (key === 'b') setActiveTool('BRUSH');
+      else if (key === 'j' || key === 's') setActiveTool('CLONE_HEAL');
+      else if (key === 'e') setActiveTool('ERASER');
+      else if (key === 'g') setActiveTool('GRADIENT_BUCKET');
+      else if (key === 'r') setActiveTool('BLUR_SHARPEN');
+      else if (key === 'o') setActiveTool('DODGE_BURN');
+      else if (key === 't') setActiveTool('TEXT');
+      else if (key === 'u') setActiveTool('SHAPE');
+      else if (key === 'p') setActiveTool('IMAGE_LAYER');
+      else if (key === 'a') setActiveTool('STAMP');
+      else if (key === 'h') setActiveTool('HAND');
+      else if (key === 'z') setActiveTool('ZOOM');
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [handleUndo, handleRedo]);
 
   // Preload images into cache and trigger redraw
   const [imagesTick, setImagesTick] = useState(0);
   const ensureImageLoaded = useCallback((url: string) => {
     if (!url) return null;
     const cached = imageCacheRef.current.get(url);
-    if (cached && cached.complete) return cached;
+    if (cached && cached.complete && cached.naturalWidth > 0) return cached;
     if (!cached) {
       const img = new Image();
       img.crossOrigin = 'anonymous';
       img.onload = () => setImagesTick((t) => t + 1);
+      img.onerror = () => {
+        // Retry without crossOrigin if external host blocks CORS preflight
+        const fallbackImg = new Image();
+        fallbackImg.onload = () => setImagesTick((t) => t + 1);
+        fallbackImg.src = url;
+        imageCacheRef.current.set(url, fallbackImg);
+      };
       img.src = url;
       imageCacheRef.current.set(url, img);
     }
     return null;
   }, []);
 
-  // Compute dynamic canvas height based on lowest card
-  const canvasWidth = 1200;
-  const maxCardBottom = studio.cards.reduce(
-    (max, c) => (c.visible ? Math.max(max, c.y + c.height) : max),
-    950
-  );
-  const canvasHeight = Math.max(1380, maxCardBottom + 210);
+  // Upload any local file to ImgBB via our backend and return the hosted URL (with dataURL fallback)
+  const uploadFileToImgBB = async (file: File): Promise<string> => {
+    setUploadingAsset(true);
+    try {
+      const dataUrl = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(String(reader.result || ''));
+        reader.onerror = () => reject(new Error('Failed to read file'));
+        reader.readAsDataURL(file);
+      });
+      try {
+        const res = await fetch('/api/public/upload-poster', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            fileName: file.name,
+            base64Data: dataUrl,
+          }),
+        });
+        const json = await res.json();
+        if (res.ok && json.fileUrl) {
+          return String(json.fileUrl);
+        }
+      } catch {
+        // Fallback to dataUrl
+      }
+      return dataUrl;
+    } finally {
+      setUploadingAsset(false);
+    }
+  };
 
-  // Main Canvas Render Engine
+  // =========================================================================
+  // MAIN PHOTOSHOP CANVAS RENDER ENGINE
+  // =========================================================================
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
+    const { canvasWidth: cw, canvasHeight: ch } = studio;
+
     ctx.save();
-    ctx.clearRect(0, 0, canvasWidth, canvasHeight);
+    ctx.clearRect(0, 0, cw, ch);
 
-    // Apply global Photoshop adjustment filters
-    ctx.filter = `brightness(${studio.brightness}%) contrast(${studio.contrast}%) saturate(${studio.saturation}%) sepia(${studio.sepia}%) hue-rotate(${studio.hueRotate}deg)`;
+    // Global Photoshop adjustment filter chain
+    const effBrightness = Math.round(
+      (studio.brightness * studio.exposure) / 100
+    );
+    ctx.filter = `brightness(${effBrightness}%) contrast(${studio.contrast}%) saturate(${studio.saturation}%) sepia(${studio.sepia}%) hue-rotate(${studio.hueRotate}deg) blur(${studio.blurPx}px)`;
 
-    // 1. Background Theme
-    const bgGrad = ctx.createLinearGradient(0, 0, canvasWidth, canvasHeight);
-    if (studio.bgTheme === 'ROYAL_NAVY') {
-      bgGrad.addColorStop(0, '#050B1A');
-      bgGrad.addColorStop(0.5, '#0B1938');
-      bgGrad.addColorStop(1, '#040812');
-    } else if (studio.bgTheme === 'IMPERIAL_EMERALD') {
-      bgGrad.addColorStop(0, '#04120E');
-      bgGrad.addColorStop(0.5, '#09261E');
-      bgGrad.addColorStop(1, '#030C09');
-    } else if (studio.bgTheme === 'VELVET_CRIMSON') {
-      bgGrad.addColorStop(0, '#160508');
-      bgGrad.addColorStop(0.5, '#290A10');
-      bgGrad.addColorStop(1, '#0D0305');
+    // 1. Background Theme Rendering
+    if (studio.bgTheme === 'BOTANICAL_BLUSH' || studio.bgTheme === 'UPLOADED_POSTER') {
+      const blushGrad = ctx.createLinearGradient(0, 0, cw, ch);
+      blushGrad.addColorStop(0, '#FFFDFB');
+      blushGrad.addColorStop(0.45, '#FFF3F0');
+      blushGrad.addColorStop(1, '#FCE7E2');
+      ctx.fillStyle = blushGrad;
+      ctx.fillRect(0, 0, cw, ch);
+
+      // Soft Watercolor Botanical Splashes
+      const splash1 = ctx.createRadialGradient(220, 200, 20, 220, 200, 480);
+      splash1.addColorStop(0, 'rgba(244, 194, 184, 0.42)');
+      splash1.addColorStop(1, 'rgba(244, 194, 184, 0)');
+      ctx.fillStyle = splash1;
+      ctx.fillRect(0, 0, cw, ch);
+
+      const splash2 = ctx.createRadialGradient(
+        cw - 240,
+        ch - 200,
+        20,
+        cw - 240,
+        ch - 200,
+        520
+      );
+      splash2.addColorStop(0, 'rgba(235, 178, 166, 0.38)');
+      splash2.addColorStop(1, 'rgba(235, 178, 166, 0)');
+      ctx.fillStyle = splash2;
+      ctx.fillRect(0, 0, cw, ch);
+
+      // Botanical Corner Leaves (Top-left & Bottom-right)
+      ctx.save();
+      ctx.fillStyle = 'rgba(196, 139, 113, 0.26)';
+      const leafPositions = [
+        [70, 80, -0.4],
+        [120, 55, 0.2],
+        [55, 135, -0.8],
+        [cw - 75, ch - 80, 2.6],
+        [cw - 125, ch - 55, -2.8],
+        [cw - 60, ch - 135, 2.2],
+      ];
+      for (const [lx, ly, rot] of leafPositions) {
+        ctx.save();
+        ctx.translate(lx, ly);
+        ctx.rotate(rot);
+        ctx.beginPath();
+        ctx.ellipse(0, 0, 38, 16, 0, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+      }
+      ctx.restore();
     } else {
-      bgGrad.addColorStop(0, '#07080C');
-      bgGrad.addColorStop(0.45, '#0E1118');
-      bgGrad.addColorStop(1, '#060709');
+      const bgGrad = ctx.createLinearGradient(0, 0, cw, ch);
+      if (studio.bgTheme === 'ROYAL_NAVY') {
+        bgGrad.addColorStop(0, '#050B1A');
+        bgGrad.addColorStop(0.5, '#0B1938');
+        bgGrad.addColorStop(1, '#040812');
+      } else if (studio.bgTheme === 'IMPERIAL_EMERALD') {
+        bgGrad.addColorStop(0, '#04120E');
+        bgGrad.addColorStop(0.5, '#09261E');
+        bgGrad.addColorStop(1, '#030C09');
+      } else if (studio.bgTheme === 'VELVET_CRIMSON') {
+        bgGrad.addColorStop(0, '#160508');
+        bgGrad.addColorStop(0.5, '#290A10');
+        bgGrad.addColorStop(1, '#0D0305');
+      } else {
+        bgGrad.addColorStop(0, '#07080C');
+        bgGrad.addColorStop(0.45, '#0E1118');
+        bgGrad.addColorStop(1, '#060709');
+      }
+      ctx.fillStyle = bgGrad;
+      ctx.fillRect(0, 0, cw, ch);
     }
-    ctx.fillStyle = bgGrad;
-    ctx.fillRect(0, 0, canvasWidth, canvasHeight);
 
+    // Custom Uploaded Base Poster / Background Texture
     if (studio.customBgUrl) {
       const customBg = ensureImageLoaded(studio.customBgUrl);
       if (customBg) {
         ctx.save();
-        ctx.globalAlpha = 0.35;
-        ctx.drawImage(customBg, 0, 0, canvasWidth, canvasHeight);
+        ctx.globalAlpha = Math.max(0.05, Math.min(1, studio.customBgOpacity / 100));
+        ctx.drawImage(customBg, 0, 0, cw, ch);
         ctx.restore();
       }
     }
 
-    // 2. Ambient Gold Glow
+    // 2. Ambient Gold / Warm Rose Spotlight
     if (studio.goldGlow > 0) {
-      const glow = ctx.createRadialGradient(600, 290, 20, 600, 290, 580);
+      const glow = ctx.createRadialGradient(
+        cw / 2,
+        280,
+        20,
+        cw / 2,
+        280,
+        cw * 0.45
+      );
       glow.addColorStop(
         0,
-        `rgba(212, 175, 55, ${(studio.goldGlow / 100) * 0.32})`
+        `rgba(212, 175, 55, ${(studio.goldGlow / 100) * 0.28})`
       );
       glow.addColorStop(1, 'rgba(0, 0, 0, 0)');
       ctx.fillStyle = glow;
-      ctx.fillRect(0, 0, canvasWidth, canvasHeight);
+      ctx.fillRect(0, 0, cw, ch);
     }
 
-    // 3. Outer Double Gold Frame
-    const goldGrad = ctx.createLinearGradient(0, 0, canvasWidth, 0);
-    goldGrad.addColorStop(0, '#9A7422');
-    goldGrad.addColorStop(0.3, '#F3D068');
-    goldGrad.addColorStop(0.5, '#FFF2B2');
-    goldGrad.addColorStop(0.7, '#D4AF37');
-    goldGrad.addColorStop(1, '#8C6516');
+    // 3. Outer Frame Border
+    const isLightBotanical = studio.bgTheme === 'BOTANICAL_BLUSH';
+    const frameStrokeColor = isLightBotanical ? '#C88A65' : '#D4AF37';
 
     if (studio.borderThickness > 0) {
-      ctx.strokeStyle = goldGrad;
+      ctx.strokeStyle = frameStrokeColor;
       ctx.lineWidth = studio.borderThickness;
       ctx.beginPath();
-      ctx.roundRect(34, 34, canvasWidth - 68, canvasHeight - 68, 20);
-      ctx.stroke();
-
-      ctx.strokeStyle = 'rgba(212, 175, 55, 0.32)';
-      ctx.lineWidth = 1;
-      ctx.beginPath();
-      ctx.roundRect(46, 46, canvasWidth - 92, canvasHeight - 92, 14);
+      ctx.roundRect(24, 24, cw - 48, ch - 48, 22);
       ctx.stroke();
     }
 
-    // 4. Official Transparent ILM Soundwave Logo at Top Center
-    ctx.save();
-    ctx.translate(455, 62);
-    ctx.scale(0.8, 0.8);
+    // 4. Official Header Lockup & 8-Compartment Boxes (Toggleable so uploaded pre-made posters aren't covered unless desired)
+    if (studio.showHeaderLockup) {
+      ctx.save();
+      ctx.textAlign = 'center';
 
-    // Lower tail fold
-    const tailGrad = ctx.createLinearGradient(70, 110, 175, 160);
-    tailGrad.addColorStop(0, '#00C6FF');
-    tailGrad.addColorStop(0.55, '#0948DB');
-    tailGrad.addColorStop(1, '#4A0D80');
-    ctx.fillStyle = tailGrad;
-    ctx.beginPath();
-    ctx.moveTo(74, 114);
-    ctx.bezierCurveTo(72, 138, 78, 158, 92, 162);
-    ctx.bezierCurveTo(110, 166, 152, 128, 174, 96);
-    ctx.closePath();
-    ctx.fill();
-
-    // Main organic pebble
-    const blobGrad = ctx.createLinearGradient(14, 14, 188, 134);
-    blobGrad.addColorStop(0, '#00D4FF');
-    blobGrad.addColorStop(0.48, '#0A58FF');
-    blobGrad.addColorStop(1, '#6A11CB');
-    ctx.fillStyle = blobGrad;
-    ctx.beginPath();
-    ctx.moveTo(88, 14);
-    ctx.bezierCurveTo(142, 14, 188, 46, 188, 82);
-    ctx.bezierCurveTo(188, 118, 138, 134, 84, 134);
-    ctx.bezierCurveTo(36, 134, 14, 106, 14, 70);
-    ctx.bezierCurveTo(14, 34, 42, 14, 88, 14);
-    ctx.closePath();
-    ctx.fill();
-
-    // 7 White Soundwave Pill Bars & Arch
-    ctx.strokeStyle = '#FFFFFF';
-    ctx.lineWidth = 3.2;
-    ctx.lineCap = 'round';
-    const pills = [
-      [44, 68, 8, 22],
-      [58, 58, 8, 38],
-      [72, 48, 8, 54],
-      [120, 48, 8, 54],
-      [134, 58, 8, 38],
-      [148, 68, 8, 22],
-    ];
-    for (const [px, py, pw, ph] of pills) {
-      ctx.beginPath();
-      ctx.roundRect(px, py, pw, ph, 4);
-      ctx.stroke();
-    }
-    // Center Arch
-    ctx.beginPath();
-    ctx.moveTo(88, 104);
-    ctx.lineTo(88, 52);
-    ctx.bezierCurveTo(88, 38, 112, 38, 112, 52);
-    ctx.lineTo(112, 104);
-    ctx.moveTo(95, 104);
-    ctx.lineTo(95, 53);
-    ctx.bezierCurveTo(95, 45, 105, 45, 105, 53);
-    ctx.lineTo(105, 104);
-    ctx.stroke();
-
-    // ILM Text
-    ctx.fillStyle = '#2B7FFF';
-    ctx.font = "800 72px 'Plus Jakarta Sans', sans-serif";
-    ctx.fillText('ILM', 210, 96);
-    ctx.fillStyle = '#E5E7EB';
-    ctx.font = "600 16px 'Plus Jakarta Sans', sans-serif";
-    ctx.fillText('Integrated Learning Master', 210, 122);
-    ctx.restore();
-
-    // 5. Header Banner & Title
-    ctx.strokeStyle = goldGrad;
-    ctx.lineWidth = 1.5;
-    ctx.beginPath();
-    ctx.moveTo(340, 214);
-    ctx.lineTo(860, 214);
-    ctx.stroke();
-
-    ctx.fillStyle = '#171A24';
-    ctx.strokeStyle = goldGrad;
-    ctx.lineWidth = 1.5;
-    ctx.beginPath();
-    ctx.roundRect(370, 232, 460, 42, 21);
-    ctx.fill();
-    ctx.stroke();
-
-    ctx.fillStyle = '#F3D068';
-    ctx.font = "700 15px 'Plus Jakarta Sans', sans-serif";
-    ctx.textAlign = 'center';
-    ctx.fillText(
-      `CLASS ${poster.classCode} · OFFICIAL COMPETITION LINEUP`,
-      600,
-      259
-    );
-
-    // Main Headline
-    ctx.fillStyle = studio.titleColor;
-    ctx.font = `700 ${studio.titleSize}px '${studio.titleFont}', Georgia, serif`;
-    ctx.fillText(studio.title, 600, 322);
-
-    // Category Roster Breakdown Summary
-    const breakdownText = CATEGORY_ORDER.map((cat) => {
-      const n = studio.cards.filter(
-        (c) => c.visible && c.categoryName === cat
-      ).length;
-      return `${cat}: ${n}`;
-    }).join('   ·   ');
-    ctx.fillStyle = '#D4AF37';
-    ctx.font = "600 14px 'Plus Jakarta Sans', sans-serif";
-    ctx.fillText(breakdownText, 600, 356);
-
-    // 6. Participant Cards (All categories combined on 1 page)
-    for (const card of studio.cards) {
-      if (!card.visible) continue;
-      const { x, y, width: cw, height: ch } = card;
-      const imgH = ch - 76;
+      // Official ILM Soundwave Pebble Icon beside Title
+      ctx.font = `800 ${studio.titleSize}px '${studio.titleFont}', Georgia, serif`;
+      const titleMetrics = ctx.measureText(studio.title);
+      const logoScale = 0.34;
+      const logoX = Math.max(60, cw / 2 - titleMetrics.width / 2 - 78);
+      const logoY = 30;
 
       ctx.save();
-      // Card background & border
-      ctx.fillStyle = '#111318';
-      ctx.strokeStyle =
-        selectedCardId === card.id ? '#00D4FF' : goldGrad;
-      ctx.lineWidth = selectedCardId === card.id ? 3.5 : 2.2;
+      ctx.translate(logoX, logoY);
+      ctx.scale(logoScale, logoScale);
+      const ilmGrad = ctx.createLinearGradient(15, 10, 175, 145);
+      ilmGrad.addColorStop(0, '#00D4FF');
+      ilmGrad.addColorStop(0.48, '#0A58FF');
+      ilmGrad.addColorStop(1, '#6A11CB');
+
+      const tailPath = new Path2D(
+        'M 70 112 C 68 138, 74 158, 88 162 C 106 166, 150 126, 172 94 Z'
+      );
+      ctx.fillStyle = ilmGrad;
+      ctx.fill(tailPath);
+
+      const pebblePath = new Path2D(
+        'M 84 10 C 140 10, 186 42, 186 78 C 186 114, 136 130, 80 130 C 32 130, 10 102, 10 66 C 10 30, 38 10, 84 10 Z'
+      );
+      ctx.fill(pebblePath);
+
+      ctx.strokeStyle = '#FFFFFF';
+      ctx.lineWidth = 3.5;
+      ctx.lineCap = 'round';
+      const bars = [
+        [40, 64, 8, 22],
+        [54, 54, 8, 38],
+        [68, 44, 8, 54],
+        [116, 44, 8, 54],
+        [130, 54, 8, 38],
+        [144, 64, 8, 22],
+      ];
+      for (const [bx, by, bw, bh] of bars) {
+        ctx.beginPath();
+        ctx.roundRect(bx, by, bw, bh, 4);
+        ctx.stroke();
+      }
+      const archPath = new Path2D(
+        'M 84 100 L 84 48 C 84 34, 108 34, 108 48 L 108 100 M 91 100 L 91 49 C 91 41, 101 41, 101 49 L 101 100'
+      );
+      ctx.stroke(archPath);
+      ctx.restore();
+
+      // Top Title
+      ctx.fillStyle = studio.titleColor;
+      ctx.font = `800 ${studio.titleSize}px '${studio.titleFont}', Georgia, serif`;
+      ctx.fillText(studio.title, cw / 2 + 24, 78);
+
+      // Subtitle Pill
+      ctx.fillStyle = isLightBotanical
+        ? 'rgba(200, 138, 101, 0.14)'
+        : 'rgba(23, 26, 36, 0.9)';
+      ctx.strokeStyle = frameStrokeColor;
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.roundRect(cw / 2 - 280, 94, 560, 34, 17);
+      ctx.fill();
+      ctx.stroke();
+
+      ctx.fillStyle = isLightBotanical ? '#8A4F38' : '#F3D068';
+      ctx.font = "700 14px 'Plus Jakarta Sans', sans-serif";
+      ctx.fillText(studio.subtitle, cw / 2, 116);
+
+      // Program Details Bar (Date, Program No, Venue)
+      ctx.fillStyle = isLightBotanical ? '#6E473B' : '#D4AF37';
+      ctx.font = "700 13px 'Plus Jakarta Sans', sans-serif";
+      ctx.fillText(studio.programDetails, cw / 2, 154);
+
+      ctx.restore();
+    }
+
+    // 5. Official 8-Compartment Botanical Boxes (if enabled)
+    if (studio.showCompartmentBoxes && cw >= 1400) {
+      const boxFill = isLightBotanical
+        ? 'rgba(255, 252, 250, 0.72)'
+        : 'rgba(17, 20, 30, 0.72)';
+      const boxStroke = isLightBotanical
+        ? 'rgba(200, 138, 101, 0.55)'
+        : 'rgba(212, 175, 55, 0.45)';
+      const headerFill = isLightBotanical ? '#C88A65' : '#D4AF37';
+      const headerTextCol = isLightBotanical ? '#FFFFFF' : '#090B10';
+
+      const compartments = [
+        { x: 60, y: 215, w: 350, h: 365, title: 'MARSHAL' },
+        { x: 435, y: 215, w: 500, h: 365, title: 'QIRATH' },
+        {
+          x: 960,
+          y: 215,
+          w: 580,
+          h: 365,
+          title: 'GRAMMARIAN · AH COUNTER · TABLE TOPIC',
+        },
+        { x: 60, y: 598, w: 440, h: 486, title: 'SPEAKERS' },
+        { x: 540, y: 598, w: 480, h: 486, title: 'SINGERS (NAAT)' },
+        { x: 1060, y: 598, w: 480, h: 486, title: 'EVALUATORS' },
+      ];
+
+      for (const comp of compartments) {
+        ctx.save();
+        ctx.fillStyle = boxFill;
+        ctx.strokeStyle = boxStroke;
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.roundRect(comp.x, comp.y, comp.w, comp.h, 20);
+        ctx.fill();
+        ctx.stroke();
+
+        // Compartment Title Pill
+        const pillW = Math.min(comp.w - 40, 360);
+        ctx.fillStyle = headerFill;
+        ctx.beginPath();
+        ctx.roundRect(
+          comp.x + (comp.w - pillW) / 2,
+          comp.y + 12,
+          pillW,
+          30,
+          15
+        );
+        ctx.fill();
+
+        ctx.fillStyle = headerTextCol;
+        ctx.font = "800 13px 'Cinzel', Georgia, serif";
+        ctx.textAlign = 'center';
+        ctx.fillText(comp.title, comp.x + comp.w / 2, comp.y + 32);
+        ctx.restore();
+      }
+    }
+
+    // 6. Custom Vector Shape Layers
+    for (const sh of studio.shapes) {
+      if (!sh.visible) continue;
+      ctx.save();
+      ctx.globalCompositeOperation = sh.blendMode;
+      const cx = sh.x + sh.width / 2;
+      const cy = sh.y + sh.height / 2;
+      ctx.translate(cx, cy);
+      ctx.rotate((sh.rotation * Math.PI) / 180);
+      ctx.translate(-cx, -cy);
+
+      ctx.beginPath();
+      if (sh.shapeType === 'CIRCLE') {
+        ctx.ellipse(
+          cx,
+          cy,
+          sh.width / 2,
+          sh.height / 2,
+          0,
+          0,
+          Math.PI * 2
+        );
+      } else if (sh.shapeType === 'ARCH') {
+        const r = sh.width / 2;
+        ctx.moveTo(sh.x, sh.y + sh.height);
+        ctx.lineTo(sh.x, sh.y + r);
+        ctx.arc(cx, sh.y + r, r, Math.PI, 0, false);
+        ctx.lineTo(sh.x + sh.width, sh.y + sh.height);
+        ctx.closePath();
+      } else if (sh.shapeType === 'LINE') {
+        ctx.moveTo(sh.x, cy);
+        ctx.lineTo(sh.x + sh.width, cy);
+      } else if (sh.shapeType === 'STAR') {
+        const spikes = 5;
+        const outerR = Math.min(sh.width, sh.height) / 2;
+        const innerR = outerR * 0.45;
+        for (let i = 0; i < spikes * 2; i++) {
+          const r = i % 2 === 0 ? outerR : innerR;
+          const angle = (i * Math.PI) / spikes - Math.PI / 2;
+          const sx = cx + Math.cos(angle) * r;
+          const sy = cy + Math.sin(angle) * r;
+          if (i === 0) ctx.moveTo(sx, sy);
+          else ctx.lineTo(sx, sy);
+        }
+        ctx.closePath();
+      } else if (sh.shapeType === 'GOLD_RIBBON') {
+        ctx.roundRect(sh.x, sh.y, sh.width, sh.height, sh.height / 2);
+      } else {
+        ctx.roundRect(
+          sh.x,
+          sh.y,
+          sh.width,
+          sh.height,
+          sh.shapeType === 'RECTANGLE' ? 0 : 18
+        );
+      }
+
+      if (sh.shapeType !== 'LINE' && sh.fillOpacity > 0) {
+        ctx.save();
+        ctx.globalAlpha = sh.fillOpacity;
+        ctx.fillStyle = sh.fillColor;
+        ctx.fill();
+        ctx.restore();
+      }
+      if (sh.strokeWidth > 0) {
+        ctx.strokeStyle = sh.strokeColor;
+        ctx.lineWidth = sh.strokeWidth;
+        ctx.stroke();
+      }
+
+      if (selectedShapeId === sh.id) {
+        ctx.strokeStyle = '#00D4FF';
+        ctx.lineWidth = 2.5;
+        ctx.setLineDash([6, 4]);
+        ctx.strokeRect(sh.x - 4, sh.y - 4, sh.width + 8, sh.height + 8);
+      }
+      ctx.restore();
+    }
+
+    // 7. Floating Custom Uploaded Image Layers
+    for (const imgLayer of studio.imageLayers) {
+      if (!imgLayer.visible) continue;
+      const loaded = ensureImageLoaded(imgLayer.imageUrl);
+      ctx.save();
+      ctx.globalAlpha = imgLayer.opacity;
+      ctx.globalCompositeOperation = imgLayer.blendMode;
+      const cx = imgLayer.x + imgLayer.width / 2;
+      const cy = imgLayer.y + imgLayer.height / 2;
+      ctx.translate(cx, cy);
+      ctx.rotate((imgLayer.rotation * Math.PI) / 180);
+      ctx.scale(imgLayer.flipX ? -1 : 1, imgLayer.flipY ? -1 : 1);
+      ctx.translate(-cx, -cy);
+
+      ctx.beginPath();
+      ctx.roundRect(
+        imgLayer.x,
+        imgLayer.y,
+        imgLayer.width,
+        imgLayer.height,
+        imgLayer.cornerRadius
+      );
+      ctx.save();
+      ctx.clip();
+      if (loaded) {
+        ctx.drawImage(
+          loaded,
+          imgLayer.x,
+          imgLayer.y,
+          imgLayer.width,
+          imgLayer.height
+        );
+      } else {
+        ctx.fillStyle = '#222';
+        ctx.fillRect(imgLayer.x, imgLayer.y, imgLayer.width, imgLayer.height);
+      }
+      ctx.restore();
+
+      if (imgLayer.borderWidth > 0) {
+        ctx.strokeStyle = imgLayer.borderColor;
+        ctx.lineWidth = imgLayer.borderWidth;
+        ctx.stroke();
+      }
+
+      if (selectedImageLayerId === imgLayer.id) {
+        ctx.strokeStyle = '#00D4FF';
+        ctx.lineWidth = 3;
+        ctx.setLineDash([6, 4]);
+        ctx.strokeRect(
+          imgLayer.x - 4,
+          imgLayer.y - 4,
+          imgLayer.width + 8,
+          imgLayer.height + 8
+        );
+      }
+      ctx.restore();
+    }
+
+    // 8. Participant Photo + Name Cards (Editable, Movable, Resizable, Rotatable)
+    for (const card of studio.cards) {
+      if (!card.visible) continue;
+      const { x, y, width: cardW, height: cardH } = card;
+      const isCompact = cardH < 105;
+      const namePlateH = isCompact ? 26 : 44;
+      const imgH = Math.max(36, cardH - namePlateH);
+
+      ctx.save();
+      ctx.globalAlpha = card.opacity ?? 1;
+      const cx = x + cardW / 2;
+      const cy = y + cardH / 2;
+      if (card.rotation || card.flipX || card.flipY) {
+        ctx.translate(cx, cy);
+        ctx.rotate(((card.rotation || 0) * Math.PI) / 180);
+        ctx.scale(card.flipX ? -1 : 1, card.flipY ? -1 : 1);
+        ctx.translate(-cx, -cy);
+      }
+
+      const cardBg = isLightBotanical ? '#FFFDFB' : '#111318';
+      const cardStroke =
+        selectedCardId === card.id
+          ? '#00D4FF'
+          : card.borderColor || (isLightBotanical ? '#C88A65' : '#D4AF37');
+
+      ctx.fillStyle = cardBg;
+      ctx.strokeStyle = cardStroke;
+      ctx.lineWidth = selectedCardId === card.id ? 3.5 : 2;
 
       const cardRadius =
         studio.frameShape === 'SQUARE'
           ? 2
           : studio.frameShape === 'CIRCLE'
-          ? 24
+          ? 22
           : 14;
       ctx.beginPath();
-      ctx.roundRect(x, y, cw, ch, cardRadius);
+      ctx.roundRect(x, y, cardW, cardH, cardRadius);
       ctx.fill();
       ctx.stroke();
 
-      // Photo clip region
+      // Portrait Clip Region
       ctx.save();
       ctx.beginPath();
-      if (studio.frameShape === 'CIRCLE') {
-        const radius = Math.min(cw - 24, imgH - 12) / 2;
-        ctx.arc(x + cw / 2, y + 10 + radius, radius, 0, Math.PI * 2);
-      } else if (studio.frameShape === 'ARCH') {
-        const r = (cw - 12) / 2;
-        ctx.moveTo(x + 6, y + 6 + imgH);
-        ctx.lineTo(x + 6, y + 6 + r);
-        ctx.arc(x + cw / 2, y + 6 + r, r, Math.PI, 0, false);
-        ctx.lineTo(x + cw - 6, y + 6 + imgH);
+      if (studio.frameShape === 'CIRCLE' && !isCompact) {
+        const radius = Math.min(cardW - 14, imgH - 8) / 2;
+        ctx.arc(x + cardW / 2, y + 6 + radius, radius, 0, Math.PI * 2);
+      } else if (studio.frameShape === 'ARCH' && !isCompact) {
+        const r = (cardW - 10) / 2;
+        ctx.moveTo(x + 5, y + 5 + imgH);
+        ctx.lineTo(x + 5, y + 5 + r);
+        ctx.arc(x + cardW / 2, y + 5 + r, r, Math.PI, 0, false);
+        ctx.lineTo(x + cardW - 5, y + 5 + imgH);
         ctx.closePath();
       } else {
         ctx.roundRect(
-          x + 6,
-          y + 6,
-          cw - 12,
-          imgH,
+          x + 4,
+          y + 4,
+          cardW - 8,
+          imgH - 4,
           studio.frameShape === 'SQUARE' ? 0 : 10
         );
       }
       ctx.clip();
 
-      ctx.fillStyle = '#1A1D24';
-      ctx.fillRect(x + 6, y + 6, cw - 12, imgH);
+      ctx.fillStyle = isLightBotanical ? '#F5E6E0' : '#1A1D24';
+      ctx.fillRect(x + 4, y + 4, cardW - 8, imgH - 4);
 
       const pImg = ensureImageLoaded(card.photoUrl);
       if (pImg) {
         const scale = card.photoScale || 1;
-        const sw = (cw - 12) * scale;
-        const sh = imgH * scale;
-        const dx = x + 6 - (sw - (cw - 12)) / 2;
-        const dy = y + 6 - (sh - imgH) / 2;
+        const sw = (cardW - 8) * scale;
+        const sh = (imgH - 4) * scale;
+        const dx =
+          x + 4 - (sw - (cardW - 8)) / 2 + (card.photoOffsetX || 0);
+        const dy =
+          y + 4 - (sh - (imgH - 4)) / 2 + (card.photoOffsetY || 0);
         ctx.drawImage(pImg, dx, dy, sw, sh);
       }
       ctx.restore();
 
-      // Category Badge on top-left of card
-      const badgeW = Math.min(cw - 24, 126);
-      ctx.fillStyle = 'rgba(11, 13, 20, 0.9)';
-      ctx.strokeStyle = '#D4AF37';
-      ctx.lineWidth = 1.2;
+      // Name Badge Plate at Bottom of Card
+      ctx.fillStyle =
+        card.nameBgColor ||
+        (isLightBotanical ? '#8A4F38' : '#171B26');
       ctx.beginPath();
-      ctx.roundRect(x + 12, y + 12, badgeW, 24, 12);
+      ctx.roundRect(
+        x + 4,
+        y + imgH + 2,
+        cardW - 8,
+        namePlateH - 6,
+        8
+      );
       ctx.fill();
-      ctx.stroke();
 
-      ctx.fillStyle = '#F3D068';
-      ctx.font = "700 10.5px 'Plus Jakarta Sans', sans-serif";
-      ctx.textAlign = 'center';
-      ctx.fillText(
-        card.categoryName.toUpperCase(),
-        x + 12 + badgeW / 2,
-        y + 28
-      );
-
-      // Scholar Name & Role Plate
-      const nameSize = cw < 210 ? 14 : cw < 250 ? 16 : 19;
+      const nameFontSize = isCompact ? 11 : cardW < 170 ? 12 : 14;
       ctx.fillStyle = '#FFFFFF';
-      ctx.font = `700 ${nameSize}px 'Cinzel', Georgia, serif`;
+      ctx.font = `700 ${nameFontSize}px 'Plus Jakarta Sans', sans-serif`;
       ctx.textAlign = 'center';
-      ctx.fillText(card.fullName, x + cw / 2, y + imgH + 32);
-
-      ctx.fillStyle = '#D4AF37';
-      ctx.font = "600 11.5px 'Plus Jakarta Sans', sans-serif";
+      const cleanName =
+        card.fullName.length > 20
+          ? card.fullName.slice(0, 19) + '…'
+          : card.fullName;
       ctx.fillText(
-        `${card.categoryName.toUpperCase()} · ${card.classCode}`,
-        x + cw / 2,
-        y + imgH + 55
+        cleanName,
+        x + cardW / 2,
+        y + imgH + (isCompact ? 16 : 19)
       );
+
+      if (!isCompact) {
+        ctx.fillStyle = '#F3D068';
+        ctx.font = "600 10px 'Plus Jakarta Sans', sans-serif";
+        ctx.fillText(
+          `${card.categoryName.toUpperCase()} · ${card.classCode}`,
+          x + cardW / 2,
+          y + imgH + 34
+        );
+      }
+
       ctx.restore();
     }
 
-    // 7. Custom Text & Sticker Overlay Layers
+    // 9. Custom Text & Stamp Overlay Layers
     for (const ov of studio.overlays) {
       if (!ov.visible) continue;
       ctx.save();
-      ctx.fillStyle = ov.color;
-      ctx.font = `700 ${ov.fontSize}px '${ov.fontFamily}', sans-serif`;
+      ctx.globalAlpha = ov.opacity ?? 1;
+      ctx.globalCompositeOperation = ov.blendMode || 'source-over';
+      ctx.translate(ov.x, ov.y);
+      ctx.rotate(((ov.rotation || 0) * Math.PI) / 180);
+
+      const fontStyle = `${ov.italic ? 'italic ' : ''}${
+        ov.bold !== false ? '700 ' : '500 '
+      }${ov.fontSize}px '${ov.fontFamily}', sans-serif`;
+      ctx.font = fontStyle;
       ctx.textAlign = 'center';
-      ctx.shadowColor = 'rgba(0,0,0,0.75)';
-      ctx.shadowBlur = 8;
-      ctx.fillText(ov.text, ov.x, ov.y);
+
+      const metrics = ctx.measureText(ov.text);
+      const pillW = metrics.width + 36;
+      const pillH = ov.fontSize + 20;
+
+      if (ov.showBgPill) {
+        ctx.fillStyle = ov.bgColor || 'rgba(15, 18, 28, 0.85)';
+        ctx.beginPath();
+        ctx.roundRect(
+          -pillW / 2,
+          -ov.fontSize - 4,
+          pillW,
+          pillH,
+          pillH / 2
+        );
+        ctx.fill();
+      }
+
+      if (ov.strokeWidth > 0) {
+        ctx.strokeStyle = ov.strokeColor || '#000000';
+        ctx.lineWidth = ov.strokeWidth;
+        ctx.strokeText(ov.text, 0, 0);
+      }
+
+      ctx.fillStyle = ov.color;
+      ctx.shadowColor = 'rgba(0,0,0,0.35)';
+      ctx.shadowBlur = 4;
+      ctx.fillText(ov.text, 0, 0);
 
       if (selectedOverlayId === ov.id) {
-        const metrics = ctx.measureText(ov.text);
-        const w = metrics.width + 24;
-        const h = ov.fontSize + 16;
         ctx.strokeStyle = '#00D4FF';
         ctx.lineWidth = 2;
-        ctx.strokeRect(ov.x - w / 2, ov.y - ov.fontSize, w, h);
+        ctx.setLineDash([5, 4]);
+        ctx.strokeRect(
+          -pillW / 2 - 4,
+          -ov.fontSize - 8,
+          pillW + 8,
+          pillH + 8
+        );
       }
       ctx.restore();
     }
 
-    // 8. Freehand Brush Strokes
+    // 10. Freehand Brush, Heal, Dodge/Burn & Blur Strokes
     for (const stroke of studio.strokes) {
-      if (stroke.points.length < 2) continue;
+      if (stroke.points.length === 0) continue;
       ctx.save();
-      ctx.strokeStyle = stroke.color;
-      ctx.lineWidth = stroke.size;
       ctx.lineCap = 'round';
       ctx.lineJoin = 'round';
+      ctx.lineWidth = stroke.size;
       ctx.globalAlpha = stroke.opacity;
+
+      if (stroke.brushStyle === 'DODGE_LIGHT') {
+        ctx.globalCompositeOperation = 'screen';
+        ctx.strokeStyle = '#FFF5D6';
+        ctx.shadowColor = '#FFFFFF';
+        ctx.shadowBlur = stroke.size;
+      } else if (stroke.brushStyle === 'BURN_SHADOW') {
+        ctx.globalCompositeOperation = 'multiply';
+        ctx.strokeStyle = '#2B1810';
+        ctx.shadowColor = '#000000';
+        ctx.shadowBlur = stroke.size;
+      } else if (stroke.brushStyle === 'NEON_GLOW') {
+        ctx.strokeStyle = stroke.color;
+        ctx.shadowColor = stroke.color;
+        ctx.shadowBlur = stroke.size * 1.8;
+      } else if (stroke.brushStyle === 'GOLD_SHIMMER') {
+        ctx.strokeStyle = '#F3D068';
+        ctx.shadowColor = '#D4AF37';
+        ctx.shadowBlur = stroke.size;
+      } else if (stroke.brushStyle === 'BLUR_GLOW') {
+        ctx.strokeStyle = stroke.color;
+        ctx.shadowColor = stroke.color;
+        ctx.shadowBlur = stroke.size * 2.5;
+      } else {
+        ctx.strokeStyle = stroke.color;
+        if (stroke.brushStyle === 'SOFT_ROUND' || stroke.brushStyle === 'HEAL_PATCH') {
+          ctx.shadowColor = stroke.color;
+          ctx.shadowBlur = stroke.size * 0.6;
+        }
+      }
+
       ctx.beginPath();
       ctx.moveTo(stroke.points[0].x, stroke.points[0].y);
       for (let i = 1; i < stroke.points.length; i++) {
         ctx.lineTo(stroke.points[i].x, stroke.points[i].y);
       }
+      if (stroke.points.length === 1) {
+        ctx.lineTo(stroke.points[0].x + 0.5, stroke.points[0].y + 0.5);
+      }
       ctx.stroke();
       ctx.restore();
     }
 
-    // 9. Footer Motto & Subtitle
-    ctx.strokeStyle = 'rgba(212, 175, 55, 0.45)';
-    ctx.lineWidth = 1;
-    ctx.beginPath();
-    ctx.moveTo(250, canvasHeight - 125);
-    ctx.lineTo(950, canvasHeight - 125);
-    ctx.stroke();
-
-    ctx.fillStyle = goldGrad;
-    ctx.font = "700 20px 'Cinzel', Georgia, serif";
-    ctx.textAlign = 'center';
-    ctx.fillText(studio.motto, 600, canvasHeight - 88);
-
-    ctx.fillStyle = '#9CA3AF';
-    ctx.font = "600 13px 'Plus Jakarta Sans', sans-serif";
-    ctx.fillText(studio.subtitle, 600, canvasHeight - 60);
-
-    // 10. Edge Vignette Overlay
-    if (studio.vignette > 0) {
-      const vig = ctx.createRadialGradient(
-        600,
-        canvasHeight / 2,
-        canvasWidth * 0.35,
-        600,
-        canvasHeight / 2,
-        canvasHeight * 0.65
-      );
-      vig.addColorStop(0, 'rgba(0,0,0,0)');
-      vig.addColorStop(1, `rgba(0,0,0,${(studio.vignette / 100) * 0.78})`);
-      ctx.fillStyle = vig;
-      ctx.fillRect(0, 0, canvasWidth, canvasHeight);
+    // 11. Footer Motto
+    if (studio.showHeaderLockup) {
+      ctx.save();
+      ctx.fillStyle = isLightBotanical ? '#7A4938' : '#D4AF37';
+      ctx.font = "700 15px 'Cinzel', Georgia, serif";
+      ctx.textAlign = 'center';
+      ctx.fillText(studio.motto, cw / 2, ch - 34);
+      ctx.restore();
     }
 
-    // Optional alignment grid
+    // 12. Edge Vignette
+    if (studio.vignette > 0) {
+      const vig = ctx.createRadialGradient(
+        cw / 2,
+        ch / 2,
+        cw * 0.35,
+        cw / 2,
+        ch / 2,
+        cw * 0.65
+      );
+      vig.addColorStop(0, 'rgba(0,0,0,0)');
+      vig.addColorStop(1, `rgba(0,0,0,${(studio.vignette / 100) * 0.72})`);
+      ctx.fillStyle = vig;
+      ctx.fillRect(0, 0, cw, ch);
+    }
+
+    // 13. Alignment Grid
     if (showGrid) {
-      ctx.strokeStyle = 'rgba(0, 212, 255, 0.18)';
+      ctx.strokeStyle = 'rgba(0, 212, 255, 0.22)';
       ctx.lineWidth = 1;
-      for (let gx = 100; gx < canvasWidth; gx += 100) {
+      for (let gx = 100; gx < cw; gx += 100) {
         ctx.beginPath();
         ctx.moveTo(gx, 0);
-        ctx.lineTo(gx, canvasHeight);
+        ctx.lineTo(gx, ch);
         ctx.stroke();
       }
-      for (let gy = 100; gy < canvasHeight; gy += 100) {
+      for (let gy = 100; gy < ch; gy += 100) {
         ctx.beginPath();
         ctx.moveTo(0, gy);
-        ctx.lineTo(canvasWidth, gy);
+        ctx.lineTo(cw, gy);
         ctx.stroke();
       }
+    }
+
+    // 14. Active Rectangular Marquee Selection ("Marching Ants")
+    if (marqueeRect && marqueeRect.w > 4 && marqueeRect.h > 4) {
+      ctx.save();
+      ctx.strokeStyle = '#00D4FF';
+      ctx.lineWidth = 2;
+      ctx.setLineDash([8, 6]);
+      ctx.strokeRect(
+        marqueeRect.x,
+        marqueeRect.y,
+        marqueeRect.w,
+        marqueeRect.h
+      );
+      ctx.fillStyle = 'rgba(0, 212, 255, 0.08)';
+      ctx.fillRect(marqueeRect.x, marqueeRect.y, marqueeRect.w, marqueeRect.h);
+      ctx.restore();
     }
 
     ctx.restore();
   }, [
     studio,
-    canvasHeight,
     selectedCardId,
     selectedOverlayId,
+    selectedShapeId,
+    selectedImageLayerId,
     showGrid,
+    marqueeRect,
     imagesTick,
-    poster.classCode,
     ensureImageLoaded,
   ]);
 
-  // Convert pointer event to 1200px canvas coordinates
+  // Convert mouse event to canvas coordinates
   const getCanvasCoords = (e: React.MouseEvent<HTMLCanvasElement>) => {
     const canvas = canvasRef.current;
     if (!canvas) return { x: 0, y: 0 };
@@ -726,15 +1530,169 @@ export const PosterPhotoshopStudio: React.FC<PosterPhotoshopStudioProps> = ({
     };
   };
 
+  // Sample exact pixel color from canvas (for Eyedropper & Clone/Heal tools)
+  const sampleCanvasHexAt = (x: number, y: number): string => {
+    const canvas = canvasRef.current;
+    if (!canvas) return fgColor;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return fgColor;
+    try {
+      const pixel = ctx.getImageData(
+        Math.max(0, Math.min(canvas.width - 1, Math.round(x))),
+        Math.max(0, Math.min(canvas.height - 1, Math.round(y))),
+        1,
+        1
+      ).data;
+      const toHex = (n: number) => n.toString(16).padStart(2, '0');
+      return `#${toHex(pixel[0])}${toHex(pixel[1])}${toHex(pixel[2])}`.toUpperCase();
+    } catch {
+      return fgColor;
+    }
+  };
+
+  const clearSelectionIds = () => {
+    setSelectedCardId(null);
+    setSelectedOverlayId(null);
+    setSelectedShapeId(null);
+    setSelectedImageLayerId(null);
+  };
+
   const handleMouseDown = (e: React.MouseEvent<HTMLCanvasElement>) => {
     const pt = getCanvasCoords(e);
 
-    if (activeTool === 'BRUSH') {
+    // 1. ZOOM TOOL
+    if (activeTool === 'ZOOM') {
+      if (e.altKey || e.shiftKey) {
+        setZoom((z) => Math.max(0.25, +(z - 0.1).toFixed(2)));
+      } else {
+        setZoom((z) => Math.min(1.8, +(z + 0.1).toFixed(2)));
+      }
+      return;
+    }
+
+    // 2. HAND PAN TOOL
+    if (activeTool === 'HAND') {
+      const vp = viewportRef.current;
+      if (!vp) return;
+      dragRef.current = {
+        type: 'PAN',
+        startX: e.clientX,
+        startY: e.clientY,
+        origX: vp.scrollLeft,
+        origY: vp.scrollTop,
+      };
+      return;
+    }
+
+    // 3. EYEDROPPER COLOR PICKER TOOL
+    if (activeTool === 'EYEDROPPER') {
+      const sampled = sampleCanvasHexAt(pt.x, pt.y);
+      setFgColor(sampled);
+      setStudioNotice(`Sampled color ${sampled} from canvas.`);
+      return;
+    }
+
+    // 4. MARQUEE OR CROP SELECTION TOOL
+    if (activeTool === 'MARQUEE' || activeTool === 'CROP') {
+      setMarqueeRect({ x: Math.round(pt.x), y: Math.round(pt.y), w: 0, h: 0 });
+      dragRef.current = {
+        type: 'MARQUEE',
+        startX: Math.round(pt.x),
+        startY: Math.round(pt.y),
+        origX: Math.round(pt.x),
+        origY: Math.round(pt.y),
+      };
+      return;
+    }
+
+    // 5. PAINT BUCKET / GRADIENT FILL TOOL
+    if (activeTool === 'GRADIENT_BUCKET') {
+      if (marqueeRect && marqueeRect.w > 10 && marqueeRect.h > 10) {
+        const newShapeId = `sh-${Date.now()}`;
+        const fillShape: StudioShapeLayer = {
+          id: newShapeId,
+          shapeType: 'RECTANGLE',
+          x: marqueeRect.x,
+          y: marqueeRect.y,
+          width: marqueeRect.w,
+          height: marqueeRect.h,
+          fillColor: fgColor,
+          fillOpacity: brushOpacity,
+          strokeColor: fgColor,
+          strokeWidth: 0,
+          rotation: 0,
+          blendMode: 'source-over',
+          visible: true,
+          locked: false,
+        };
+        pushHistory(
+          { ...studio, shapes: [...studio.shapes, fillShape] },
+          'Bucket Fill Selection'
+        );
+      } else if (selectedShapeId) {
+        pushHistory(
+          {
+            ...studio,
+            shapes: studio.shapes.map((s) =>
+              s.id === selectedShapeId ? { ...s, fillColor: fgColor } : s
+            ),
+          },
+          'Fill Selected Shape'
+        );
+      } else {
+        // Fill full background overlay shape
+        const newShapeId = `sh-${Date.now()}`;
+        const bgOverlay: StudioShapeLayer = {
+          id: newShapeId,
+          shapeType: 'RECTANGLE',
+          x: 0,
+          y: 0,
+          width: studio.canvasWidth,
+          height: studio.canvasHeight,
+          fillColor: fgColor,
+          fillOpacity: 0.25,
+          strokeColor: fgColor,
+          strokeWidth: 0,
+          rotation: 0,
+          blendMode: 'overlay',
+          visible: true,
+          locked: false,
+        };
+        pushHistory(
+          { ...studio, shapes: [...studio.shapes, bgOverlay] },
+          'Apply Color Wash Layer'
+        );
+      }
+      return;
+    }
+
+    // 6. BRUSH / CLONE_HEAL / DODGE_BURN / BLUR_SHARPEN TOOLS
+    if (
+      activeTool === 'BRUSH' ||
+      activeTool === 'CLONE_HEAL' ||
+      activeTool === 'DODGE_BURN' ||
+      activeTool === 'BLUR_SHARPEN'
+    ) {
+      let strokeColor = fgColor;
+      let effectiveStyle = brushStyle;
+      if (activeTool === 'CLONE_HEAL') {
+        strokeColor = sampleCanvasHexAt(
+          Math.max(0, pt.x - 18),
+          Math.max(0, pt.y - 18)
+        );
+        effectiveStyle = 'HEAL_PATCH';
+      } else if (activeTool === 'DODGE_BURN') {
+        effectiveStyle = e.altKey ? 'BURN_SHADOW' : 'DODGE_LIGHT';
+      } else if (activeTool === 'BLUR_SHARPEN') {
+        effectiveStyle = 'BLUR_GLOW';
+      }
+
       const newStroke: BrushStroke = {
         points: [pt],
-        color: brushColor,
+        color: strokeColor,
         size: brushSize,
         opacity: brushOpacity,
+        brushStyle: effectiveStyle,
       };
       setStudio((prev) => ({
         ...prev,
@@ -750,54 +1708,134 @@ export const PosterPhotoshopStudio: React.FC<PosterPhotoshopStudioProps> = ({
       return;
     }
 
+    // 7. ERASER TOOL
     if (activeTool === 'ERASER') {
-      // Remove strokes near pointer
       setStudio((prev) => ({
         ...prev,
         strokes: prev.strokes.filter(
           (s) =>
             !s.points.some(
-              (p) => Math.hypot(p.x - pt.x, p.y - pt.y) < brushSize * 3
+              (p) => Math.hypot(p.x - pt.x, p.y - pt.y) < brushSize * 2.5
             )
         ),
       }));
       return;
     }
 
+    // 8. TEXT TOOL
     if (activeTool === 'TEXT') {
       const newId = `ov-${Date.now()}`;
       const newLayer: CustomOverlayLayer = {
         id: newId,
         type: 'TEXT',
-        text: 'Custom Gold Heading',
+        text: 'Double-Click or Edit Text in Inspector',
         x: Math.round(pt.x),
         y: Math.round(pt.y),
-        fontSize: 28,
-        color: '#F3D068',
+        fontSize: 32,
+        color: fgColor,
+        strokeColor: '#FFFFFF',
+        strokeWidth: 0,
+        bgColor: '#8A4F38',
+        showBgPill: false,
         fontFamily: 'Cinzel',
+        bold: true,
+        italic: false,
+        rotation: 0,
+        opacity: 1,
+        blendMode: 'source-over',
         visible: true,
+        locked: false,
       };
-      pushHistory({
-        ...studio,
-        overlays: [...studio.overlays, newLayer],
-      });
+      pushHistory(
+        {
+          ...studio,
+          overlays: [...studio.overlays, newLayer],
+        },
+        'Add Text Layer'
+      );
+      clearSelectionIds();
       setSelectedOverlayId(newId);
-      setSelectedCardId(null);
       setActiveTool('MOVE');
+      setRightTab('LAYERS');
       return;
     }
 
-    // MOVE tool: check overlays first
+    // 9. SHAPE TOOL
+    if (activeTool === 'SHAPE') {
+      const newId = `sh-${Date.now()}`;
+      const newShape: StudioShapeLayer = {
+        id: newId,
+        shapeType: shapePreset,
+        x: Math.round(pt.x - 110),
+        y: Math.round(pt.y - 70),
+        width: 220,
+        height: shapePreset === 'LINE' ? 8 : 140,
+        fillColor: fgColor,
+        fillOpacity: shapePreset === 'LINE' ? 0 : 0.25,
+        strokeColor: fgColor,
+        strokeWidth: 3,
+        rotation: 0,
+        blendMode: 'source-over',
+        visible: true,
+        locked: false,
+      };
+      pushHistory(
+        { ...studio, shapes: [...studio.shapes, newShape] },
+        `Add ${shapePreset} Shape`
+      );
+      clearSelectionIds();
+      setSelectedShapeId(newId);
+      setActiveTool('MOVE');
+      setRightTab('LAYERS');
+      return;
+    }
+
+    // 10. STAMP / STICKER TOOL
+    if (activeTool === 'STAMP') {
+      const newId = `stamp-${Date.now()}`;
+      const stampLayer: CustomOverlayLayer = {
+        id: newId,
+        type: 'BADGE',
+        text: stampPreset,
+        x: Math.round(pt.x),
+        y: Math.round(pt.y),
+        fontSize: 26,
+        color: '#FFFFFF',
+        strokeColor: '#C88A65',
+        strokeWidth: 0,
+        bgColor: '#8A4F38',
+        showBgPill: true,
+        fontFamily: 'Cinzel',
+        bold: true,
+        italic: false,
+        rotation: 0,
+        opacity: 1,
+        blendMode: 'source-over',
+        visible: true,
+        locked: false,
+      };
+      pushHistory(
+        { ...studio, overlays: [...studio.overlays, stampLayer] },
+        'Stamp Badge'
+      );
+      clearSelectionIds();
+      setSelectedOverlayId(newId);
+      setActiveTool('MOVE');
+      setRightTab('LAYERS');
+      return;
+    }
+
+    // 11. MOVE & SELECT TOOL: Check Overlays -> Participant Cards -> Image Layers -> Shapes
     for (let i = studio.overlays.length - 1; i >= 0; i--) {
       const ov = studio.overlays[i];
-      if (!ov.visible) continue;
+      if (!ov.visible || ov.locked) continue;
       if (
-        Math.abs(pt.x - ov.x) <= 160 &&
-        pt.y >= ov.y - ov.fontSize - 10 &&
-        pt.y <= ov.y + 16
+        Math.abs(pt.x - ov.x) <= 190 &&
+        pt.y >= ov.y - ov.fontSize - 14 &&
+        pt.y <= ov.y + 20
       ) {
+        clearSelectionIds();
         setSelectedOverlayId(ov.id);
-        setSelectedCardId(null);
         dragRef.current = {
           type: 'OVERLAY',
           id: ov.id,
@@ -810,18 +1848,17 @@ export const PosterPhotoshopStudio: React.FC<PosterPhotoshopStudioProps> = ({
       }
     }
 
-    // Check participant cards
     for (let i = studio.cards.length - 1; i >= 0; i--) {
       const c = studio.cards[i];
-      if (!c.visible) continue;
+      if (!c.visible || c.locked) continue;
       if (
         pt.x >= c.x &&
         pt.x <= c.x + c.width &&
         pt.y >= c.y &&
         pt.y <= c.y + c.height
       ) {
+        clearSelectionIds();
         setSelectedCardId(c.id);
-        setSelectedOverlayId(null);
         dragRef.current = {
           type: 'CARD',
           id: c.id,
@@ -834,14 +1871,77 @@ export const PosterPhotoshopStudio: React.FC<PosterPhotoshopStudioProps> = ({
       }
     }
 
-    setSelectedCardId(null);
-    setSelectedOverlayId(null);
+    for (let i = studio.imageLayers.length - 1; i >= 0; i--) {
+      const im = studio.imageLayers[i];
+      if (!im.visible || im.locked) continue;
+      if (
+        pt.x >= im.x &&
+        pt.x <= im.x + im.width &&
+        pt.y >= im.y &&
+        pt.y <= im.y + im.height
+      ) {
+        clearSelectionIds();
+        setSelectedImageLayerId(im.id);
+        dragRef.current = {
+          type: 'IMAGE_LAYER',
+          id: im.id,
+          startX: pt.x,
+          startY: pt.y,
+          origX: im.x,
+          origY: im.y,
+        };
+        return;
+      }
+    }
+
+    for (let i = studio.shapes.length - 1; i >= 0; i--) {
+      const sh = studio.shapes[i];
+      if (!sh.visible || sh.locked) continue;
+      if (
+        pt.x >= sh.x &&
+        pt.x <= sh.x + sh.width &&
+        pt.y >= sh.y &&
+        pt.y <= sh.y + sh.height
+      ) {
+        clearSelectionIds();
+        setSelectedShapeId(sh.id);
+        dragRef.current = {
+          type: 'SHAPE',
+          id: sh.id,
+          startX: pt.x,
+          startY: pt.y,
+          origX: sh.x,
+          origY: sh.y,
+        };
+        return;
+      }
+    }
+
+    clearSelectionIds();
   };
 
   const handleMouseMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
     if (!dragRef.current) return;
-    const pt = getCanvasCoords(e);
     const drag = dragRef.current;
+
+    if (drag.type === 'PAN') {
+      const vp = viewportRef.current;
+      if (!vp) return;
+      vp.scrollLeft = drag.origX - (e.clientX - drag.startX);
+      vp.scrollTop = drag.origY - (e.clientY - drag.startY);
+      return;
+    }
+
+    const pt = getCanvasCoords(e);
+
+    if (drag.type === 'MARQUEE') {
+      const rx = Math.min(drag.startX, Math.round(pt.x));
+      const ry = Math.min(drag.startY, Math.round(pt.y));
+      const rw = Math.abs(Math.round(pt.x) - drag.startX);
+      const rh = Math.abs(Math.round(pt.y) - drag.startY);
+      setMarqueeRect({ x: rx, y: ry, w: rw, h: rh });
+      return;
+    }
 
     if (drag.type === 'BRUSH') {
       setStudio((prev) => {
@@ -876,6 +1976,24 @@ export const PosterPhotoshopStudio: React.FC<PosterPhotoshopStudioProps> = ({
             : o
         ),
       }));
+    } else if (drag.type === 'IMAGE_LAYER') {
+      setStudio((prev) => ({
+        ...prev,
+        imageLayers: prev.imageLayers.map((im) =>
+          im.id === drag.id
+            ? { ...im, x: drag.origX + dx, y: drag.origY + dy }
+            : im
+        ),
+      }));
+    } else if (drag.type === 'SHAPE') {
+      setStudio((prev) => ({
+        ...prev,
+        shapes: prev.shapes.map((sh) =>
+          sh.id === drag.id
+            ? { ...sh, x: drag.origX + dx, y: drag.origY + dy }
+            : sh
+        ),
+      }));
     }
   };
 
@@ -883,34 +2001,37 @@ export const PosterPhotoshopStudio: React.FC<PosterPhotoshopStudioProps> = ({
     dragRef.current = null;
   };
 
-  const exportCanvasDataUrl = (mimeType: 'image/png' | 'image/jpeg' = 'image/png') => {
+  const exportCanvasDataUrl = (
+    mimeType: 'image/png' | 'image/jpeg' = 'image/png'
+  ) => {
     const canvas = canvasRef.current;
     if (!canvas) return '';
     return canvas.toDataURL(mimeType, 0.95);
   };
 
   const handleDownloadEdited = (format: 'png' | 'jpg') => {
-    const dataUrl = exportCanvasDataUrl(
-      format === 'png' ? 'image/png' : 'image/jpeg'
-    );
-    if (!dataUrl) return;
-    const link = document.createElement('a');
-    link.href = dataUrl;
-    link.download = `ILM_${poster.classCode}_Edited_Poster.${format}`;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+    clearSelectionIds();
+    setMarqueeRect(null);
+    setTimeout(() => {
+      const dataUrl = exportCanvasDataUrl(
+        format === 'png' ? 'image/png' : 'image/jpeg'
+      );
+      if (!dataUrl) return;
+      const link = document.createElement('a');
+      link.href = dataUrl;
+      link.download = `ILM_${poster.classCode}_Edited_Poster.${format}`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    }, 50);
   };
 
   const handleSaveToDatabase = async () => {
     setSaving(true);
     try {
-      const prevCardId = selectedCardId;
-      const prevOvId = selectedOverlayId;
-      setSelectedCardId(null);
-      setSelectedOverlayId(null);
-
-      await new Promise((r) => setTimeout(r, 60));
+      clearSelectionIds();
+      setMarqueeRect(null);
+      await new Promise((r) => setTimeout(r, 70));
       const dataUrl = exportCanvasDataUrl('image/png');
       const snapshotJson = JSON.stringify(
         studio.cards.map((c) => ({
@@ -919,6 +2040,7 @@ export const PosterPhotoshopStudio: React.FC<PosterPhotoshopStudioProps> = ({
           photoUrl: c.photoUrl,
           classCode: c.classCode,
           categoryName: c.categoryName,
+          ownTopic: c.ownTopic || null,
         }))
       );
       await onSavePoster(
@@ -928,8 +2050,6 @@ export const PosterPhotoshopStudio: React.FC<PosterPhotoshopStudioProps> = ({
         studio.subtitle,
         snapshotJson
       );
-      setSelectedCardId(prevCardId);
-      setSelectedOverlayId(prevOvId);
     } finally {
       setSaving(false);
     }
@@ -938,66 +2058,211 @@ export const PosterPhotoshopStudio: React.FC<PosterPhotoshopStudioProps> = ({
   const handleTriggerPostToFeed = async () => {
     setPostingFeed(true);
     try {
-      setSelectedCardId(null);
-      setSelectedOverlayId(null);
-      await new Promise((r) => setTimeout(r, 60));
+      clearSelectionIds();
+      setMarqueeRect(null);
+      await new Promise((r) => setTimeout(r, 70));
       const dataUrl = exportCanvasDataUrl('image/png');
       await onPostToFeed(poster, dataUrl, feedCaption);
       setShowFeedPrompt(false);
+      setStudioNotice(`Shared Class ${poster.classCode} Poster to the Public Feed!`);
     } finally {
       setPostingFeed(false);
     }
   };
 
-  const addQuickBadge = (badgeText: string) => {
-    const newId = `badge-${Date.now()}`;
-    pushHistory({
-      ...studio,
-      overlays: [
-        ...studio.overlays,
-        {
-          id: newId,
-          type: 'BADGE',
-          text: badgeText,
-          x: 600,
-          y: 380,
-          fontSize: 28,
-          color: '#F3D068',
-          fontFamily: 'Cinzel',
-          visible: true,
-        },
-      ],
-    });
-    setSelectedOverlayId(newId);
+  // Upload a Pre-Made Poster as the Full Base Poster inside Studio
+  const handleUploadPreMadeBasePoster = async (
+    e: React.ChangeEvent<HTMLInputElement>
+  ) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const url = await uploadFileToImgBB(file);
+    pushHistory(
+      {
+        ...studio,
+        bgTheme: 'UPLOADED_POSTER',
+        customBgUrl: url,
+        customBgOpacity: 100,
+        showCompartmentBoxes: false,
+        showHeaderLockup: false,
+      },
+      'Uploaded Pre-Made Base Poster'
+    );
+    setStudioNotice(
+      'Loaded pre-made poster! You can now add text, photos, shapes, retouch, or save/share directly.'
+    );
+    e.target.value = '';
+  };
+
+  // Upload a Floating Image Layer (Logo, Extra Participant Photo, Graphic)
+  const handleUploadFloatingImageLayer = async (
+    e: React.ChangeEvent<HTMLInputElement>
+  ) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const url = await uploadFileToImgBB(file);
+    const newId = `img-${Date.now()}`;
+    const newLayer: StudioImageLayer = {
+      id: newId,
+      name: file.name.slice(0, 24),
+      imageUrl: url,
+      x: Math.round(studio.canvasWidth / 2 - 160),
+      y: Math.round(studio.canvasHeight / 2 - 160),
+      width: 320,
+      height: 320,
+      rotation: 0,
+      opacity: 1,
+      cornerRadius: 16,
+      borderWidth: 2,
+      borderColor: '#C88A65',
+      flipX: false,
+      flipY: false,
+      blendMode: 'source-over',
+      visible: true,
+      locked: false,
+    };
+    pushHistory(
+      {
+        ...studio,
+        imageLayers: [...studio.imageLayers, newLayer],
+      },
+      `Added Image Layer (${file.name})`
+    );
+    clearSelectionIds();
+    setSelectedImageLayerId(newId);
+    setActiveTool('MOVE');
+    setRightTab('LAYERS');
+    e.target.value = '';
+  };
+
+  // Add a brand new Participant Card directly inside Photoshop Studio
+  const handleAddNewParticipantCard = () => {
+    const newId = Date.now();
+    const newCard: StudioParticipantCard = {
+      id: newId,
+      fullName: 'New Scholar Name',
+      photoUrl: '/assets/scholars/scholar_1.svg',
+      classCode: poster.classCode,
+      categoryName: 'Speech',
+      x: Math.round(studio.canvasWidth / 2 - 95),
+      y: Math.round(studio.canvasHeight / 2 - 75),
+      width: 190,
+      height: 150,
+      rotation: 0,
+      opacity: 1,
+      photoScale: 1,
+      photoOffsetX: 0,
+      photoOffsetY: 0,
+      flipX: false,
+      flipY: false,
+      visible: true,
+      locked: false,
+    };
+    pushHistory(
+      { ...studio, cards: [...studio.cards, newCard] },
+      'Added New Scholar Card'
+    );
+    clearSelectionIds();
+    setSelectedCardId(newId);
+    setActiveTool('MOVE');
+    setRightTab('LAYERS');
   };
 
   const selectedCard =
     studio.cards.find((c) => c.id === selectedCardId) || null;
   const selectedOverlay =
     studio.overlays.find((o) => o.id === selectedOverlayId) || null;
+  const selectedShape =
+    studio.shapes.find((s) => s.id === selectedShapeId) || null;
+  const selectedImageLayer =
+    studio.imageLayers.find((im) => im.id === selectedImageLayerId) || null;
+
+  const TOOLBOX_ITEMS: Array<{
+    id: PhotoshopToolId;
+    label: string;
+    icon: React.FC<{ className?: string }>;
+  }> = [
+    { id: 'MOVE', label: 'Move & Transform Tool (V)', icon: Move },
+    { id: 'MARQUEE', label: 'Rectangular Marquee Selection (M)', icon: Square },
+    { id: 'CROP', label: 'Crop & Canvas Ratio Tool (C)', icon: Crop },
+    { id: 'EYEDROPPER', label: 'Eyedropper Color Picker (I)', icon: Pipette },
+    { id: 'BRUSH', label: 'Paint & Retouch Brush (B)', icon: Brush },
+    { id: 'CLONE_HEAL', label: 'Spot Healing & Clone Stamp (J)', icon: Wand2 },
+    { id: 'ERASER', label: 'Stroke Eraser Tool (E)', icon: Eraser },
+    {
+      id: 'GRADIENT_BUCKET',
+      label: 'Paint Bucket & Color Wash (G)',
+      icon: PaintBucket,
+    },
+    { id: 'BLUR_SHARPEN', label: 'Blur / Soft Glow Brush (R)', icon: Droplet },
+    {
+      id: 'DODGE_BURN',
+      label: 'Dodge Light / Alt+Burn Shadow (O)',
+      icon: Sun,
+    },
+    { id: 'TEXT', label: 'Horizontal Type / Text Tool (T)', icon: Type },
+    {
+      id: 'SHAPE',
+      label: 'Rectangle / Circle / Arch / Star Shape Tool (U)',
+      icon: Circle,
+    },
+    {
+      id: 'STAMP',
+      label: 'Botanical & Award Badge Stamp Tool (A)',
+      icon: Stamp,
+    },
+    { id: 'HAND', label: 'Hand Pan Canvas Tool (H)', icon: Hand },
+    { id: 'ZOOM', label: 'Zoom In / Alt+Zoom Out Tool (Z)', icon: ZoomIn },
+  ];
 
   return (
-    <div className="fixed inset-0 z-50 bg-[#050609] text-neutral-100 flex flex-col overflow-hidden">
+    <div className="fixed inset-0 z-50 bg-[#050609] text-neutral-100 flex flex-col overflow-hidden select-none">
       {/* =====================================================================
-          TOP STUDIO HEADER BAR
+          1. TOP PHOTOSHOP APPLICATION HEADER & QUICK ACTIONS BAR
          ===================================================================== */}
-      <header className="h-14 px-4 bg-[#0B0D14] border-b border-neutral-800 flex items-center justify-between gap-4 shrink-0">
-        <div className="flex items-center gap-3">
-          <span className="px-2.5 py-1 rounded bg-[#D4AF37]/20 border border-[#D4AF37]/50 text-[#F3D068] font-display font-bold text-xs">
-            ILM PRO POSTER STUDIO
+      <header className="h-14 px-4 bg-[#0B0D14] border-b border-neutral-800 flex items-center justify-between gap-3 shrink-0">
+        <div className="flex items-center gap-2.5 min-w-0">
+          <span className="px-2.5 py-1 rounded bg-[#D4AF37]/20 border border-[#D4AF37]/50 text-[#F3D068] font-display font-bold text-xs shrink-0">
+            PS · ILM PHOTOSHOP STUDIO
           </span>
-          <span className="text-xs text-neutral-300 font-semibold truncate">
-            Class {poster.classCode} — Unified All-Category Poster Editor
+          <span className="text-xs text-neutral-300 font-semibold truncate hidden sm:inline">
+            Class {poster.classCode} — Full Poster Editor ({studio.canvasWidth}×
+            {studio.canvasHeight}px)
           </span>
+
+          {/* Quick Upload Pre-Made Poster or Image Layer right in Top Bar */}
+          <label className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-indigo-950/90 hover:bg-indigo-900 text-indigo-200 border border-indigo-500/50 text-xs font-semibold cursor-pointer shrink-0">
+            <Upload className="w-3.5 h-3.5 text-indigo-400" />
+            <span>
+              {uploadingAsset ? 'Uploading...' : 'Upload Pre-Made Poster'}
+            </span>
+            <input
+              type="file"
+              accept="image/*"
+              className="hidden"
+              onChange={handleUploadPreMadeBasePoster}
+            />
+          </label>
+
+          <label className="hidden lg:inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-[#141824] hover:bg-[#1B2234] text-neutral-200 border border-neutral-700 text-xs font-medium cursor-pointer shrink-0">
+            <ImageIcon className="w-3.5 h-3.5 text-[#D4AF37]" />
+            <span>Add Image Layer</span>
+            <input
+              type="file"
+              accept="image/*"
+              className="hidden"
+              onChange={handleUploadFloatingImageLayer}
+            />
+          </label>
         </div>
 
-        {/* Center Undo / Redo / Zoom Controls */}
-        <div className="hidden md:flex items-center gap-1.5 bg-[#12151F] px-2.5 py-1 rounded-lg border border-neutral-800">
+        {/* Center Undo / Redo / Zoom / Grid Controls */}
+        <div className="hidden md:flex items-center gap-1 bg-[#12151F] px-2.5 py-1 rounded-lg border border-neutral-800">
           <button
             type="button"
             onClick={handleUndo}
             disabled={history.length === 0}
-            title="Undo"
+            title="Undo (Ctrl+Z)"
             className="p-1.5 rounded hover:bg-neutral-800 disabled:opacity-30 cursor-pointer"
           >
             <Undo2 className="w-4 h-4" />
@@ -1006,7 +2271,7 @@ export const PosterPhotoshopStudio: React.FC<PosterPhotoshopStudioProps> = ({
             type="button"
             onClick={handleRedo}
             disabled={redoStack.length === 0}
-            title="Redo"
+            title="Redo (Ctrl+Y)"
             className="p-1.5 rounded hover:bg-neutral-800 disabled:opacity-30 cursor-pointer"
           >
             <Redo2 className="w-4 h-4" />
@@ -1014,18 +2279,27 @@ export const PosterPhotoshopStudio: React.FC<PosterPhotoshopStudioProps> = ({
           <span className="text-neutral-700 mx-1">|</span>
           <button
             type="button"
-            onClick={() => setZoom((z) => Math.max(0.35, +(z - 0.08).toFixed(2)))}
+            onClick={() =>
+              setZoom((z) => Math.max(0.25, +(z - 0.08).toFixed(2)))
+            }
             className="p-1.5 rounded hover:bg-neutral-800 cursor-pointer"
             title="Zoom Out"
           >
             <ZoomOut className="w-4 h-4" />
           </button>
-          <span className="text-xs font-mono-tabular w-12 text-center">
-            {Math.round(zoom * 100)}%
-          </span>
           <button
             type="button"
-            onClick={() => setZoom((z) => Math.min(1.2, +(z + 0.08).toFixed(2)))}
+            onClick={() => setZoom(0.56)}
+            className="text-xs font-mono-tabular w-12 text-center hover:text-[#F3D068] cursor-pointer"
+            title="Reset Zoom to Fit"
+          >
+            {Math.round(zoom * 100)}%
+          </button>
+          <button
+            type="button"
+            onClick={() =>
+              setZoom((z) => Math.min(1.6, +(z + 0.08).toFixed(2)))
+            }
             className="p-1.5 rounded hover:bg-neutral-800 cursor-pointer"
             title="Zoom In"
           >
@@ -1036,7 +2310,9 @@ export const PosterPhotoshopStudio: React.FC<PosterPhotoshopStudioProps> = ({
             type="button"
             onClick={() => setShowGrid((g) => !g)}
             className={`p-1.5 rounded cursor-pointer ${
-              showGrid ? 'bg-[#D4AF37] text-neutral-950' : 'hover:bg-neutral-800'
+              showGrid
+                ? 'bg-[#D4AF37] text-neutral-950'
+                : 'hover:bg-neutral-800'
             }`}
             title="Toggle Alignment Grid"
           >
@@ -1044,7 +2320,7 @@ export const PosterPhotoshopStudio: React.FC<PosterPhotoshopStudioProps> = ({
           </button>
         </div>
 
-        {/* Right Save / Export / Post to Feed Buttons */}
+        {/* Right Export / Share to Feed / Save Poster Buttons */}
         <div className="flex items-center gap-2">
           <button
             type="button"
@@ -1052,23 +2328,23 @@ export const PosterPhotoshopStudio: React.FC<PosterPhotoshopStudioProps> = ({
             className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#151924] hover:bg-[#1E2436] text-neutral-200 border border-neutral-700 text-xs font-medium cursor-pointer"
           >
             <Download className="w-3.5 h-3.5 text-[#D4AF37]" />
-            <span>Download PNG</span>
+            <span className="hidden sm:inline">Download PNG</span>
           </button>
 
           <button
             type="button"
             onClick={() => setShowFeedPrompt(true)}
-            className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-[#162038] hover:bg-[#1E2C4D] text-[#60A5FA] border border-[#3B82F6]/50 text-xs font-semibold cursor-pointer"
+            className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-emerald-950/80 hover:bg-emerald-900 text-emerald-200 border border-emerald-500/50 text-xs font-semibold cursor-pointer"
           >
-            <Send className="w-3.5 h-3.5" />
-            <span>Post to Feed</span>
+            <Send className="w-3.5 h-3.5 text-emerald-400" />
+            <span>Share to Feed</span>
           </button>
 
           <button
             type="button"
             onClick={handleSaveToDatabase}
             disabled={saving}
-            className="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-lg bg-gradient-to-r from-[#C89D2E] via-[#E8C55B] to-[#C89D2E] text-neutral-950 font-semibold text-xs cursor-pointer disabled:opacity-50"
+            className="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-lg bg-gradient-to-r from-[#C89D2E] via-[#E8C55B] to-[#C89D2E] text-neutral-950 font-bold text-xs cursor-pointer disabled:opacity-50 shadow"
           >
             <Save className="w-3.5 h-3.5" />
             <span>{saving ? 'Saving...' : 'Save Poster'}</span>
@@ -1085,19 +2361,277 @@ export const PosterPhotoshopStudio: React.FC<PosterPhotoshopStudioProps> = ({
       </header>
 
       {/* =====================================================================
-          3-PANE PHOTOSHOP WORKSPACE (Left Tools | Center Canvas | Right Inspector)
+          2. CONTEXTUAL PHOTOSHOP TOOL OPTIONS RIBBON
+         ===================================================================== */}
+      <div className="h-11 px-4 bg-[#0E111A] border-b border-neutral-800/90 flex items-center justify-between gap-4 text-xs overflow-x-auto shrink-0">
+        <div className="flex items-center gap-3 whitespace-nowrap">
+          <span className="font-bold text-[#F3D068] uppercase tracking-wider">
+            Tool: {activeTool.replace('_', ' ')}
+          </span>
+          <span className="text-neutral-700">|</span>
+
+          {/* Active Foreground / Background Color Swatches */}
+          <div className="flex items-center gap-1.5">
+            <label className="text-neutral-400">Color:</label>
+            <input
+              type="color"
+              value={fgColor}
+              onChange={(e) => setFgColor(e.target.value)}
+              className="w-6 h-6 rounded cursor-pointer border border-neutral-600 bg-transparent"
+              title="Foreground Color"
+            />
+            <span className="font-mono-tabular text-[11px] text-neutral-300">
+              {fgColor}
+            </span>
+          </div>
+
+          {/* Brush / Retouch / Eraser Options */}
+          {(activeTool === 'BRUSH' ||
+            activeTool === 'CLONE_HEAL' ||
+            activeTool === 'DODGE_BURN' ||
+            activeTool === 'BLUR_SHARPEN' ||
+            activeTool === 'ERASER') && (
+            <>
+              <span className="text-neutral-700">|</span>
+              <div className="flex items-center gap-2">
+                <span className="text-neutral-400">Tip:</span>
+                <select
+                  value={brushStyle}
+                  onChange={(e) =>
+                    setBrushStyle(e.target.value as BrushStroke['brushStyle'])
+                  }
+                  className="px-2 py-1 rounded bg-[#141824] border border-neutral-700 text-white text-xs"
+                >
+                  <option value="SOFT_ROUND">Soft Round</option>
+                  <option value="HARD_ROUND">Hard Round</option>
+                  <option value="CALLIGRAPHY">Calligraphy Pen</option>
+                  <option value="GOLD_SHIMMER">Gold Shimmer</option>
+                  <option value="NEON_GLOW">Neon Glow</option>
+                  <option value="BLUR_GLOW">Soft Blur Glow</option>
+                  <option value="DODGE_LIGHT">Dodge Highlight</option>
+                  <option value="BURN_SHADOW">Burn Shadow</option>
+                </select>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-neutral-400">Size: {brushSize}px</span>
+                <input
+                  type="range"
+                  min={2}
+                  max={80}
+                  value={brushSize}
+                  onChange={(e) => setBrushSize(Number(e.target.value))}
+                  className="w-24"
+                />
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-neutral-400">
+                  Opacity: {Math.round(brushOpacity * 100)}%
+                </span>
+                <input
+                  type="range"
+                  min={0.1}
+                  max={1}
+                  step={0.05}
+                  value={brushOpacity}
+                  onChange={(e) => setBrushOpacity(Number(e.target.value))}
+                  className="w-20"
+                />
+              </div>
+              <button
+                type="button"
+                onClick={() =>
+                  pushHistory({ ...studio, strokes: [] }, 'Cleared All Strokes')
+                }
+                className="px-2 py-1 rounded bg-red-950/60 hover:bg-red-900/80 text-red-200 border border-red-800/50 cursor-pointer"
+              >
+                Clear Strokes
+              </button>
+            </>
+          )}
+
+          {/* Shape Tool Options */}
+          {activeTool === 'SHAPE' && (
+            <>
+              <span className="text-neutral-700">|</span>
+              <span className="text-neutral-400">Shape Preset:</span>
+              <select
+                value={shapePreset}
+                onChange={(e) =>
+                  setShapePreset(
+                    e.target.value as StudioShapeLayer['shapeType']
+                  )
+                }
+                className="px-2 py-1 rounded bg-[#141824] border border-neutral-700 text-white"
+              >
+                <option value="ROUNDED_RECT">Rounded Card</option>
+                <option value="RECTANGLE">Sharp Rectangle</option>
+                <option value="CIRCLE">Circle / Medallion</option>
+                <option value="ARCH">Classical Arch</option>
+                <option value="STAR">5-Point Star</option>
+                <option value="GOLD_RIBBON">Pill Banner Ribbon</option>
+                <option value="LINE">Divider Line</option>
+              </select>
+              <span className="text-neutral-400">
+                (Click anywhere on canvas to place shape)
+              </span>
+            </>
+          )}
+
+          {/* Stamp Tool Options */}
+          {activeTool === 'STAMP' && (
+            <>
+              <span className="text-neutral-700">|</span>
+              <span className="text-neutral-400">Stamp Badge:</span>
+              <select
+                value={stampPreset}
+                onChange={(e) => setStampPreset(e.target.value)}
+                className="px-2 py-1 rounded bg-[#141824] border border-neutral-700 text-white"
+              >
+                <option value="🌸 BOTANICAL ROSE SEAL 🌸">
+                  🌸 Botanical Rose Seal
+                </option>
+                <option value="★ OFFICIAL ILM SELECTION ★">
+                  ★ Official ILM Selection
+                </option>
+                <option value="🏆 WEEKLY COMPETITION LINEUP 🏆">
+                  🏆 Weekly Competition Lineup
+                </option>
+                <option value="👑 BEST SPEAKER NOMINEE 👑">
+                  👑 Best Speaker Nominee
+                </option>
+                <option value="✨ TALENT TODAY · LEADERS TOMORROW ✨">
+                  ✨ Talent Today · Leaders Tomorrow
+                </option>
+              </select>
+              <span className="text-neutral-400">
+                (Click canvas to stamp)
+              </span>
+            </>
+          )}
+
+          {/* Marquee / Crop Options */}
+          {marqueeRect && marqueeRect.w > 8 && (
+            <>
+              <span className="text-neutral-700">|</span>
+              <span className="text-[#00D4FF] font-mono-tabular">
+                Selection: {marqueeRect.w}×{marqueeRect.h}px
+              </span>
+              <button
+                type="button"
+                onClick={() => {
+                  pushHistory(
+                    {
+                      ...studio,
+                      canvasWidth: Math.max(400, marqueeRect.w),
+                      canvasHeight: Math.max(400, marqueeRect.h),
+                      cards: studio.cards.map((c) => ({
+                        ...c,
+                        x: c.x - marqueeRect.x,
+                        y: c.y - marqueeRect.y,
+                      })),
+                      overlays: studio.overlays.map((o) => ({
+                        ...o,
+                        x: o.x - marqueeRect.x,
+                        y: o.y - marqueeRect.y,
+                      })),
+                      shapes: studio.shapes.map((s) => ({
+                        ...s,
+                        x: s.x - marqueeRect.x,
+                        y: s.y - marqueeRect.y,
+                      })),
+                      imageLayers: studio.imageLayers.map((im) => ({
+                        ...im,
+                        x: im.x - marqueeRect.x,
+                        y: im.y - marqueeRect.y,
+                      })),
+                    },
+                    'Cropped Canvas to Selection'
+                  );
+                  setMarqueeRect(null);
+                  setActiveTool('MOVE');
+                }}
+                className="px-2.5 py-1 rounded bg-[#D4AF37] text-neutral-950 font-bold cursor-pointer"
+              >
+                Apply Crop
+              </button>
+              <button
+                type="button"
+                onClick={() => setMarqueeRect(null)}
+                className="px-2 py-1 rounded bg-neutral-800 text-neutral-300 cursor-pointer"
+              >
+                Deselect
+              </button>
+            </>
+          )}
+        </div>
+
+        {/* Quick Layer Action Shortcuts on Right of Ribbon */}
+        <div className="flex items-center gap-2 shrink-0">
+          {studioNotice && (
+            <span className="text-emerald-300 font-medium truncate max-w-xs">
+              {studioNotice}
+            </span>
+          )}
+          <button
+            type="button"
+            onClick={handleAddNewParticipantCard}
+            className="inline-flex items-center gap-1 px-2.5 py-1 rounded bg-[#162038] hover:bg-[#1E2C4D] text-[#60A5FA] border border-[#3B82F6]/40 font-semibold cursor-pointer"
+          >
+            <Plus className="w-3.5 h-3.5" />
+            <span>+ Add Scholar Photo</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              const newId = `ov-${Date.now()}`;
+              pushHistory(
+                {
+                  ...studio,
+                  overlays: [
+                    ...studio.overlays,
+                    {
+                      id: newId,
+                      type: 'TEXT',
+                      text: 'New Poster Heading',
+                      x: Math.round(studio.canvasWidth / 2),
+                      y: Math.round(studio.canvasHeight / 2),
+                      fontSize: 34,
+                      color: '#7A4938',
+                      strokeColor: '#FFFFFF',
+                      strokeWidth: 0,
+                      bgColor: '#8A4F38',
+                      showBgPill: false,
+                      fontFamily: 'Cinzel',
+                      bold: true,
+                      italic: false,
+                      rotation: 0,
+                      opacity: 1,
+                      blendMode: 'source-over',
+                      visible: true,
+                      locked: false,
+                    },
+                  ],
+                },
+                'Added Text Layer'
+              );
+              clearSelectionIds();
+              setSelectedOverlayId(newId);
+            }}
+            className="inline-flex items-center gap-1 px-2.5 py-1 rounded bg-[#151924] hover:bg-neutral-800 text-[#F3D068] border border-[#D4AF37]/40 font-semibold cursor-pointer"
+          >
+            <Type className="w-3.5 h-3.5" />
+            <span>+ Add Text</span>
+          </button>
+        </div>
+      </div>
+
+      {/* =====================================================================
+          3. MAIN 3-PANE PHOTOSHOP WORKSPACE
          ===================================================================== */}
       <div className="flex-1 flex min-h-0">
-        {/* LEFT PHOTOSHOP TOOLBOX */}
-        <aside className="w-16 bg-[#0B0D14] border-r border-neutral-800 flex flex-col items-center py-4 gap-3 shrink-0">
-          {(
-            [
-              { id: 'MOVE', label: 'Move & Select (V)', icon: Move },
-              { id: 'TEXT', label: 'Add Text Layer (T)', icon: Type },
-              { id: 'BRUSH', label: 'Retouch Brush (B)', icon: Brush },
-              { id: 'ERASER', label: 'Stroke Eraser (E)', icon: Eraser },
-            ] as const
-          ).map((tool) => {
+        {/* LEFT PHOTOSHOP TOOLBOX (15 Professional Tools + Color Swatches) */}
+        <aside className="w-16 bg-[#0B0D14] border-r border-neutral-800 flex flex-col items-center py-3 gap-1.5 overflow-y-auto shrink-0">
+          {TOOLBOX_ITEMS.map((tool) => {
             const Icon = tool.icon;
             const isActive = activeTool === tool.id;
             return (
@@ -1106,9 +2640,9 @@ export const PosterPhotoshopStudio: React.FC<PosterPhotoshopStudioProps> = ({
                 type="button"
                 onClick={() => setActiveTool(tool.id)}
                 title={tool.label}
-                className={`w-10 h-10 rounded-xl flex items-center justify-center transition-all cursor-pointer ${
+                className={`w-10 h-9 rounded-lg flex items-center justify-center transition-all cursor-pointer shrink-0 ${
                   isActive
-                    ? 'bg-[#D4AF37] text-neutral-950 shadow-lg'
+                    ? 'bg-[#D4AF37] text-neutral-950 shadow-md'
                     : 'bg-[#12151F] text-neutral-300 hover:text-white hover:bg-neutral-800'
                 }`}
               >
@@ -1119,38 +2653,53 @@ export const PosterPhotoshopStudio: React.FC<PosterPhotoshopStudioProps> = ({
 
           <div className="w-8 border-t border-neutral-800 my-1" />
 
-          {/* Quick Badge / Trophy Stamp Buttons */}
-          <button
-            type="button"
-            onClick={() => addQuickBadge('★ OFFICIAL ILM SELECTION ★')}
-            title="Stamp Official Selection Ribbon"
-            className="w-10 h-10 rounded-xl bg-[#12151F] hover:bg-neutral-800 text-[#F3D068] flex items-center justify-center text-xs font-bold cursor-pointer"
+          {/* Upload Floating Image Tool Button in Toolbox */}
+          <label
+            title="Place Image / Logo Layer (P)"
+            className="w-10 h-9 rounded-lg bg-[#12151F] hover:bg-neutral-800 text-indigo-300 flex items-center justify-center cursor-pointer shrink-0"
           >
-            ★
-          </button>
-          <button
-            type="button"
-            onClick={() => addQuickBadge('🏆 WEEKLY COMPETITION LINEUP 🏆')}
-            title="Stamp Trophy Header"
-            className="w-10 h-10 rounded-xl bg-[#12151F] hover:bg-neutral-800 text-[#F3D068] flex items-center justify-center text-xs font-bold cursor-pointer"
-          >
-            🏆
-          </button>
+            <ImageIcon className="w-4 h-4" />
+            <input
+              type="file"
+              accept="image/*"
+              className="hidden"
+              onChange={handleUploadFloatingImageLayer}
+            />
+          </label>
+
+          {/* Photoshop Dual Foreground/Background Swatches */}
+          <div className="relative w-10 h-10 mt-1 shrink-0" title="Foreground / Background Colors">
+            <input
+              type="color"
+              value={bgColorSwatch}
+              onChange={(e) => setBgColorSwatch(e.target.value)}
+              className="absolute bottom-0 right-0 w-6 h-6 rounded border border-neutral-500 cursor-pointer"
+            />
+            <input
+              type="color"
+              value={fgColor}
+              onChange={(e) => setFgColor(e.target.value)}
+              className="absolute top-0 left-0 w-6 h-6 rounded border-2 border-white cursor-pointer z-10"
+            />
+          </div>
         </aside>
 
         {/* CENTER INTERACTIVE CANVAS STAGE */}
-        <div className="flex-1 bg-[#050609] overflow-auto flex items-start justify-center p-6 sm:p-10">
+        <div
+          ref={viewportRef}
+          className="flex-1 bg-[#050609] overflow-auto flex items-start justify-center p-6 sm:p-10"
+        >
           <div
-            className="shadow-2xl border border-neutral-800 bg-[#07080C] transition-all"
+            className="shadow-2xl border border-neutral-800 bg-[#FFF5F5] transition-all shrink-0"
             style={{
-              width: `${Math.round(canvasWidth * zoom)}px`,
-              height: `${Math.round(canvasHeight * zoom)}px`,
+              width: `${Math.round(studio.canvasWidth * zoom)}px`,
+              height: `${Math.round(studio.canvasHeight * zoom)}px`,
             }}
           >
             <canvas
               ref={canvasRef}
-              width={canvasWidth}
-              height={canvasHeight}
+              width={studio.canvasWidth}
+              height={studio.canvasHeight}
               onMouseDown={handleMouseDown}
               onMouseMove={handleMouseMove}
               onMouseUp={handleMouseUp}
@@ -1158,23 +2707,28 @@ export const PosterPhotoshopStudio: React.FC<PosterPhotoshopStudioProps> = ({
               className={`w-full h-full block ${
                 activeTool === 'MOVE'
                   ? 'cursor-move'
-                  : activeTool === 'BRUSH' || activeTool === 'ERASER'
-                  ? 'cursor-crosshair'
-                  : 'cursor-text'
+                  : activeTool === 'HAND'
+                  ? 'cursor-grab'
+                  : activeTool === 'ZOOM'
+                  ? 'cursor-zoom-in'
+                  : activeTool === 'TEXT'
+                  ? 'cursor-text'
+                  : 'cursor-crosshair'
               }`}
             />
           </div>
         </div>
 
-        {/* RIGHT PHOTOSHOP INSPECTOR (LAYERS, COLOR GRADING, LAYOUT) */}
+        {/* RIGHT PHOTOSHOP INSPECTOR (4 TABS: LAYERS, ADJUSTMENTS, LAYOUT, HISTORY) */}
         <aside className="w-80 sm:w-96 bg-[#0B0D14] border-l border-neutral-800 flex flex-col shrink-0">
           {/* Inspector Tabs */}
-          <div className="grid grid-cols-3 border-b border-neutral-800 text-xs font-semibold">
+          <div className="grid grid-cols-4 border-b border-neutral-800 text-[11px] font-semibold">
             {(
               [
-                { id: 'LAYERS', label: 'Layers & Text', icon: Layers },
-                { id: 'ADJUSTMENTS', label: 'Adjustments', icon: Sliders },
-                { id: 'LAYOUT', label: 'Theme & Grid', icon: LayoutGrid },
+                { id: 'LAYERS', label: 'Layers', icon: Layers },
+                { id: 'ADJUSTMENTS', label: 'Adjust', icon: Sliders },
+                { id: 'LAYOUT', label: 'Template', icon: LayoutGrid },
+                { id: 'HISTORY', label: 'History', icon: History },
               ] as const
             ).map((t) => {
               const Icon = t.icon;
@@ -1183,7 +2737,7 @@ export const PosterPhotoshopStudio: React.FC<PosterPhotoshopStudioProps> = ({
                   key={t.id}
                   type="button"
                   onClick={() => setRightTab(t.id)}
-                  className={`py-3 px-2 flex items-center justify-center gap-1.5 border-b-2 transition-colors cursor-pointer ${
+                  className={`py-3 px-1 flex items-center justify-center gap-1 border-b-2 transition-colors cursor-pointer ${
                     rightTab === t.id
                       ? 'border-[#D4AF37] text-[#F3D068] bg-[#12151F]'
                       : 'border-transparent text-neutral-400 hover:text-white'
@@ -1196,165 +2750,114 @@ export const PosterPhotoshopStudio: React.FC<PosterPhotoshopStudioProps> = ({
             })}
           </div>
 
-          <div className="flex-1 overflow-y-auto p-4 space-y-5 text-xs">
+          <div className="flex-1 overflow-y-auto p-4 space-y-4 text-xs">
             {/* ===============================================================
-                INSPECTOR TAB 1: LAYERS, SELECTED SCHOLAR CARD, TEXT, BRUSH
+                TAB 1: LAYERS & SELECTED ELEMENT PROPERTIES
                =============================================================== */}
             {rightTab === 'LAYERS' && (
               <>
-                {/* Main Poster Typography Controls */}
-                <div className="p-3.5 rounded-xl bg-[#11141E] border border-neutral-800 space-y-3">
-                  <div className="font-semibold text-[#F3D068] uppercase tracking-wider">
-                    Poster Headline & Typography
-                  </div>
-                  <div>
-                    <label className="block text-neutral-400 mb-1">
-                      Main Headline
-                    </label>
-                    <input
-                      type="text"
-                      value={studio.title}
-                      onChange={(e) =>
-                        setStudio((prev) => ({
-                          ...prev,
-                          title: e.target.value,
-                        }))
-                      }
-                      className="w-full px-2.5 py-1.5 rounded bg-[#090B10] border border-neutral-700 text-white"
-                    />
-                  </div>
-                  <div className="grid grid-cols-2 gap-2">
-                    <div>
-                      <label className="block text-neutral-400 mb-1">
-                        Font Family
-                      </label>
-                      <select
-                        value={studio.titleFont}
-                        onChange={(e) =>
-                          setStudio((prev) => ({
-                            ...prev,
-                            titleFont: e.target.value,
-                          }))
-                        }
-                        className="w-full px-2 py-1.5 rounded bg-[#090B10] border border-neutral-700 text-white"
-                      >
-                        <option value="Cinzel">Cinzel (Luxury Serif)</option>
-                        <option value="Plus Jakarta Sans">
-                          Plus Jakarta Sans
-                        </option>
-                        <option value="Georgia">Classic Georgia</option>
-                        <option value="Impact">Impact Display</option>
-                      </select>
-                    </div>
-                    <div>
-                      <label className="block text-neutral-400 mb-1">
-                        Size ({studio.titleSize}px) & Color
-                      </label>
-                      <div className="flex items-center gap-2">
-                        <input
-                          type="range"
-                          min={24}
-                          max={54}
-                          value={studio.titleSize}
-                          onChange={(e) =>
-                            setStudio((prev) => ({
-                              ...prev,
-                              titleSize: Number(e.target.value),
-                            }))
-                          }
-                          className="flex-1"
-                        />
-                        <input
-                          type="color"
-                          value={studio.titleColor}
-                          onChange={(e) =>
-                            setStudio((prev) => ({
-                              ...prev,
-                              titleColor: e.target.value,
-                            }))
-                          }
-                          className="w-7 h-7 rounded cursor-pointer bg-transparent border-0"
-                        />
-                      </div>
-                    </div>
-                  </div>
-                  <div>
-                    <label className="block text-neutral-400 mb-1">
-                      Footer Subtitle
-                    </label>
-                    <input
-                      type="text"
-                      value={studio.subtitle}
-                      onChange={(e) =>
-                        setStudio((prev) => ({
-                          ...prev,
-                          subtitle: e.target.value,
-                        }))
-                      }
-                      className="w-full px-2.5 py-1.5 rounded bg-[#090B10] border border-neutral-700 text-white"
-                    />
-                  </div>
-                </div>
-
-                {/* Brush Tool Settings when Brush/Eraser is active */}
-                {(activeTool === 'BRUSH' || activeTool === 'ERASER') && (
-                  <div className="p-3.5 rounded-xl bg-[#11141E] border border-[#D4AF37]/40 space-y-3">
-                    <div className="flex items-center justify-between">
-                      <span className="font-semibold text-[#F3D068]">
-                        Brush & Retouch Controls
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() =>
-                          pushHistory({ ...studio, strokes: [] })
-                        }
-                        className="text-red-400 hover:underline cursor-pointer"
-                      >
-                        Clear All Strokes
-                      </button>
-                    </div>
-                    <div className="grid grid-cols-2 gap-3">
-                      <div>
-                        <label className="block text-neutral-400 mb-1">
-                          Brush Size ({brushSize}px)
-                        </label>
-                        <input
-                          type="range"
-                          min={2}
-                          max={36}
-                          value={brushSize}
-                          onChange={(e) =>
-                            setBrushSize(Number(e.target.value))
-                          }
-                          className="w-full"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-neutral-400 mb-1">
-                          Brush Color
-                        </label>
-                        <input
-                          type="color"
-                          value={brushColor}
-                          onChange={(e) => setBrushColor(e.target.value)}
-                          className="w-full h-7 rounded cursor-pointer"
-                        />
-                      </div>
-                    </div>
-                  </div>
-                )}
-
-                {/* Selected Participant Card Inspector */}
+                {/* SELECTED SCHOLAR CARD INSPECTOR */}
                 {selectedCard && (
                   <div className="p-3.5 rounded-xl bg-[#141A29] border border-[#00D4FF]/60 space-y-3">
                     <div className="flex items-center justify-between">
-                      <span className="font-semibold text-[#00D4FF]">
-                        Selected Scholar Layer
+                      <span className="font-bold text-[#00D4FF]">
+                        Selected Scholar Card
                       </span>
-                      <span className="font-mono-tabular text-neutral-400">
-                        X:{selectedCard.x} Y:{selectedCard.y}
-                      </span>
+                      <div className="flex items-center gap-1.5">
+                        <button
+                          type="button"
+                          title="Flip Horizontal"
+                          onClick={() =>
+                            setStudio((prev) => ({
+                              ...prev,
+                              cards: prev.cards.map((c) =>
+                                c.id === selectedCard.id
+                                  ? { ...c, flipX: !c.flipX }
+                                  : c
+                              ),
+                            }))
+                          }
+                          className="p-1 rounded bg-neutral-800 hover:bg-neutral-700 text-neutral-200 cursor-pointer"
+                        >
+                          <FlipHorizontal className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          type="button"
+                          title="Duplicate Scholar Card"
+                          onClick={() => {
+                            const dup: StudioParticipantCard = {
+                              ...selectedCard,
+                              id: Date.now(),
+                              x: selectedCard.x + 25,
+                              y: selectedCard.y + 25,
+                            };
+                            pushHistory(
+                              { ...studio, cards: [...studio.cards, dup] },
+                              'Duplicated Scholar Card'
+                            );
+                            setSelectedCardId(dup.id);
+                          }}
+                          className="p-1 rounded bg-neutral-800 hover:bg-neutral-700 text-neutral-200 cursor-pointer"
+                        >
+                          <Copy className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          type="button"
+                          title="Delete Scholar Card from Poster"
+                          onClick={() => {
+                            pushHistory(
+                              {
+                                ...studio,
+                                cards: studio.cards.filter(
+                                  (c) => c.id !== selectedCard.id
+                                ),
+                              },
+                              'Removed Scholar Card'
+                            );
+                            setSelectedCardId(null);
+                          }}
+                          className="p-1 rounded bg-red-950/60 hover:bg-red-900 text-red-300 cursor-pointer"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
                     </div>
+
+                    {/* Replace or Upload Scholar Photo */}
+                    <div className="flex items-center gap-3 p-2 rounded-lg bg-[#0B0E17] border border-neutral-800">
+                      <img
+                        src={selectedCard.photoUrl}
+                        alt={selectedCard.fullName}
+                        referrerPolicy="no-referrer"
+                        className="w-12 h-12 rounded-lg object-cover border border-[#D4AF37]"
+                      />
+                      <label className="flex-1 py-1.5 px-3 rounded-lg bg-indigo-950 hover:bg-indigo-900 text-indigo-200 border border-indigo-500/40 text-center font-semibold cursor-pointer">
+                        <Upload className="w-3.5 h-3.5 inline mr-1" />
+                        <span>Change Scholar Photo</span>
+                        <input
+                          type="file"
+                          accept="image/*"
+                          className="hidden"
+                          onChange={async (e) => {
+                            const file = e.target.files?.[0];
+                            if (!file) return;
+                            const uploadedUrl = await uploadFileToImgBB(file);
+                            pushHistory(
+                              {
+                                ...studio,
+                                cards: studio.cards.map((c) =>
+                                  c.id === selectedCard.id
+                                    ? { ...c, photoUrl: uploadedUrl }
+                                    : c
+                                ),
+                              },
+                              `Updated Photo for ${selectedCard.fullName}`
+                            );
+                          }}
+                        />
+                      </label>
+                    </div>
+
                     <div>
                       <label className="block text-neutral-300 mb-1">
                         Scholar Name
@@ -1375,10 +2878,11 @@ export const PosterPhotoshopStudio: React.FC<PosterPhotoshopStudioProps> = ({
                         className="w-full px-2.5 py-1.5 rounded bg-[#090B10] border border-neutral-700 text-white"
                       />
                     </div>
+
                     <div className="grid grid-cols-2 gap-2">
                       <div>
                         <label className="block text-neutral-300 mb-1">
-                          Competition Role
+                          Category Role
                         </label>
                         <select
                           value={selectedCard.categoryName}
@@ -1408,8 +2912,8 @@ export const PosterPhotoshopStudio: React.FC<PosterPhotoshopStudioProps> = ({
                         </label>
                         <input
                           type="range"
-                          min={0.8}
-                          max={1.6}
+                          min={0.6}
+                          max={2.2}
                           step={0.05}
                           value={selectedCard.photoScale}
                           onChange={(e) =>
@@ -1429,15 +2933,16 @@ export const PosterPhotoshopStudio: React.FC<PosterPhotoshopStudioProps> = ({
                         />
                       </div>
                     </div>
+
                     <div className="grid grid-cols-2 gap-2">
                       <div>
                         <label className="block text-neutral-300 mb-1">
-                          Card Width ({selectedCard.width}px)
+                          Width ({selectedCard.width}px)
                         </label>
                         <input
                           type="range"
-                          min={160}
-                          max={420}
+                          min={110}
+                          max={480}
                           value={selectedCard.width}
                           onChange={(e) =>
                             setStudio((prev) => ({
@@ -1454,12 +2959,12 @@ export const PosterPhotoshopStudio: React.FC<PosterPhotoshopStudioProps> = ({
                       </div>
                       <div>
                         <label className="block text-neutral-300 mb-1">
-                          Card Height ({selectedCard.height}px)
+                          Height ({selectedCard.height}px)
                         </label>
                         <input
                           type="range"
-                          min={190}
-                          max={460}
+                          min={70}
+                          max={480}
                           value={selectedCard.height}
                           onChange={(e) =>
                             setStudio((prev) => ({
@@ -1475,25 +2980,223 @@ export const PosterPhotoshopStudio: React.FC<PosterPhotoshopStudioProps> = ({
                         />
                       </div>
                     </div>
+
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
+                        <label className="block text-neutral-300 mb-1">
+                          Rotation ({selectedCard.rotation || 0}°)
+                        </label>
+                        <input
+                          type="range"
+                          min={-45}
+                          max={45}
+                          value={selectedCard.rotation || 0}
+                          onChange={(e) =>
+                            setStudio((prev) => ({
+                              ...prev,
+                              cards: prev.cards.map((c) =>
+                                c.id === selectedCard.id
+                                  ? { ...c, rotation: Number(e.target.value) }
+                                  : c
+                              ),
+                            }))
+                          }
+                          className="w-full"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-neutral-300 mb-1">
+                          Opacity ({Math.round((selectedCard.opacity ?? 1) * 100)}
+                          %)
+                        </label>
+                        <input
+                          type="range"
+                          min={0.1}
+                          max={1}
+                          step={0.05}
+                          value={selectedCard.opacity ?? 1}
+                          onChange={(e) =>
+                            setStudio((prev) => ({
+                              ...prev,
+                              cards: prev.cards.map((c) =>
+                                c.id === selectedCard.id
+                                  ? { ...c, opacity: Number(e.target.value) }
+                                  : c
+                              ),
+                            }))
+                          }
+                          className="w-full"
+                        />
+                      </div>
+                    </div>
                   </div>
                 )}
 
-                {/* Selected Custom Text / Badge Layer Inspector */}
-                {selectedOverlay && (
+                {/* SELECTED FLOATING IMAGE LAYER INSPECTOR */}
+                {selectedImageLayer && (
                   <div className="p-3.5 rounded-xl bg-[#141A29] border border-[#00D4FF]/60 space-y-3">
                     <div className="flex items-center justify-between">
-                      <span className="font-semibold text-[#00D4FF]">
-                        Selected Text / Badge Layer
+                      <span className="font-bold text-[#00D4FF]">
+                        Selected Image Layer
                       </span>
                       <button
                         type="button"
                         onClick={() => {
-                          pushHistory({
-                            ...studio,
-                            overlays: studio.overlays.filter(
-                              (o) => o.id !== selectedOverlay.id
-                            ),
-                          });
+                          pushHistory(
+                            {
+                              ...studio,
+                              imageLayers: studio.imageLayers.filter(
+                                (im) => im.id !== selectedImageLayer.id
+                              ),
+                            },
+                            'Deleted Image Layer'
+                          );
+                          setSelectedImageLayerId(null);
+                        }}
+                        className="text-red-400 hover:underline cursor-pointer"
+                      >
+                        Delete Layer
+                      </button>
+                    </div>
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
+                        <label className="block text-neutral-300 mb-1">
+                          Width ({selectedImageLayer.width}px)
+                        </label>
+                        <input
+                          type="range"
+                          min={60}
+                          max={1600}
+                          value={selectedImageLayer.width}
+                          onChange={(e) =>
+                            setStudio((prev) => ({
+                              ...prev,
+                              imageLayers: prev.imageLayers.map((im) =>
+                                im.id === selectedImageLayer.id
+                                  ? { ...im, width: Number(e.target.value) }
+                                  : im
+                              ),
+                            }))
+                          }
+                          className="w-full"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-neutral-300 mb-1">
+                          Height ({selectedImageLayer.height}px)
+                        </label>
+                        <input
+                          type="range"
+                          min={60}
+                          max={1200}
+                          value={selectedImageLayer.height}
+                          onChange={(e) =>
+                            setStudio((prev) => ({
+                              ...prev,
+                              imageLayers: prev.imageLayers.map((im) =>
+                                im.id === selectedImageLayer.id
+                                  ? { ...im, height: Number(e.target.value) }
+                                  : im
+                              ),
+                            }))
+                          }
+                          className="w-full"
+                        />
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
+                        <label className="block text-neutral-300 mb-1">
+                          Rotation ({selectedImageLayer.rotation}°)
+                        </label>
+                        <input
+                          type="range"
+                          min={-180}
+                          max={180}
+                          value={selectedImageLayer.rotation}
+                          onChange={(e) =>
+                            setStudio((prev) => ({
+                              ...prev,
+                              imageLayers: prev.imageLayers.map((im) =>
+                                im.id === selectedImageLayer.id
+                                  ? { ...im, rotation: Number(e.target.value) }
+                                  : im
+                              ),
+                            }))
+                          }
+                          className="w-full"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-neutral-300 mb-1">
+                          Opacity ({Math.round(selectedImageLayer.opacity * 100)}
+                          %)
+                        </label>
+                        <input
+                          type="range"
+                          min={0.1}
+                          max={1}
+                          step={0.05}
+                          value={selectedImageLayer.opacity}
+                          onChange={(e) =>
+                            setStudio((prev) => ({
+                              ...prev,
+                              imageLayers: prev.imageLayers.map((im) =>
+                                im.id === selectedImageLayer.id
+                                  ? { ...im, opacity: Number(e.target.value) }
+                                  : im
+                              ),
+                            }))
+                          }
+                          className="w-full"
+                        />
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setStudio((prev) => ({
+                          ...prev,
+                          imageLayers: prev.imageLayers.map((im) =>
+                            im.id === selectedImageLayer.id
+                              ? {
+                                  ...im,
+                                  x: 0,
+                                  y: 0,
+                                  width: prev.canvasWidth,
+                                  height: prev.canvasHeight,
+                                  cornerRadius: 0,
+                                }
+                              : im
+                          ),
+                        }))
+                      }
+                      className="w-full py-1.5 rounded bg-[#162038] text-[#60A5FA] border border-[#3B82F6]/40 font-semibold cursor-pointer"
+                    >
+                      Stretch Image to Full Poster Canvas
+                    </button>
+                  </div>
+                )}
+
+                {/* SELECTED TEXT / BADGE OVERLAY INSPECTOR */}
+                {selectedOverlay && (
+                  <div className="p-3.5 rounded-xl bg-[#141A29] border border-[#00D4FF]/60 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <span className="font-bold text-[#00D4FF]">
+                        Selected Text / Stamp Layer
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          pushHistory(
+                            {
+                              ...studio,
+                              overlays: studio.overlays.filter(
+                                (o) => o.id !== selectedOverlay.id
+                              ),
+                            },
+                            'Deleted Text Layer'
+                          );
                           setSelectedOverlayId(null);
                         }}
                         className="text-red-400 hover:underline cursor-pointer"
@@ -1516,58 +3219,293 @@ export const PosterPhotoshopStudio: React.FC<PosterPhotoshopStudioProps> = ({
                       }
                       className="w-full px-2.5 py-1.5 rounded bg-[#090B10] border border-neutral-700 text-white"
                     />
-                    <div className="flex items-center gap-3">
-                      <input
-                        type="range"
-                        min={14}
-                        max={64}
-                        value={selectedOverlay.fontSize}
+                    <div className="grid grid-cols-2 gap-2">
+                      <select
+                        value={selectedOverlay.fontFamily}
                         onChange={(e) =>
                           setStudio((prev) => ({
                             ...prev,
                             overlays: prev.overlays.map((o) =>
                               o.id === selectedOverlay.id
-                                ? { ...o, fontSize: Number(e.target.value) }
+                                ? { ...o, fontFamily: e.target.value }
                                 : o
                             ),
                           }))
                         }
-                        className="flex-1"
-                      />
-                      <input
-                        type="color"
-                        value={selectedOverlay.color}
-                        onChange={(e) =>
-                          setStudio((prev) => ({
-                            ...prev,
-                            overlays: prev.overlays.map((o) =>
-                              o.id === selectedOverlay.id
-                                ? { ...o, color: e.target.value }
-                                : o
-                            ),
-                          }))
-                        }
-                        className="w-8 h-7 rounded cursor-pointer"
-                      />
+                        className="px-2 py-1.5 rounded bg-[#090B10] border border-neutral-700 text-white"
+                      >
+                        <option value="Cinzel">Cinzel Serif</option>
+                        <option value="Plus Jakarta Sans">
+                          Plus Jakarta Sans
+                        </option>
+                        <option value="Georgia">Georgia Classic</option>
+                        <option value="Impact">Impact Bold</option>
+                      </select>
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="range"
+                          min={12}
+                          max={90}
+                          value={selectedOverlay.fontSize}
+                          onChange={(e) =>
+                            setStudio((prev) => ({
+                              ...prev,
+                              overlays: prev.overlays.map((o) =>
+                                o.id === selectedOverlay.id
+                                  ? { ...o, fontSize: Number(e.target.value) }
+                                  : o
+                              ),
+                            }))
+                          }
+                          className="flex-1"
+                        />
+                        <input
+                          type="color"
+                          value={selectedOverlay.color}
+                          onChange={(e) =>
+                            setStudio((prev) => ({
+                              ...prev,
+                              overlays: prev.overlays.map((o) =>
+                                o.id === selectedOverlay.id
+                                  ? { ...o, color: e.target.value }
+                                  : o
+                              ),
+                            }))
+                          }
+                          className="w-7 h-7 rounded cursor-pointer"
+                        />
+                      </div>
+                    </div>
+                    <div className="flex items-center justify-between gap-2">
+                      <label className="inline-flex items-center gap-1.5 text-neutral-300 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={selectedOverlay.showBgPill}
+                          onChange={(e) =>
+                            setStudio((prev) => ({
+                              ...prev,
+                              overlays: prev.overlays.map((o) =>
+                                o.id === selectedOverlay.id
+                                  ? { ...o, showBgPill: e.target.checked }
+                                  : o
+                              ),
+                            }))
+                          }
+                        />
+                        <span>Background Pill</span>
+                      </label>
+                      {selectedOverlay.showBgPill && (
+                        <input
+                          type="color"
+                          value={selectedOverlay.bgColor || '#8A4F38'}
+                          onChange={(e) =>
+                            setStudio((prev) => ({
+                              ...prev,
+                              overlays: prev.overlays.map((o) =>
+                                o.id === selectedOverlay.id
+                                  ? { ...o, bgColor: e.target.value }
+                                  : o
+                              ),
+                            }))
+                          }
+                          className="w-7 h-6 rounded cursor-pointer"
+                        />
+                      )}
                     </div>
                   </div>
                 )}
 
-                {/* All Scholar Layers List (Grouped by Category) */}
+                {/* SELECTED SHAPE INSPECTOR */}
+                {selectedShape && (
+                  <div className="p-3.5 rounded-xl bg-[#141A29] border border-[#00D4FF]/60 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <span className="font-bold text-[#00D4FF]">
+                        Selected Shape ({selectedShape.shapeType})
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          pushHistory(
+                            {
+                              ...studio,
+                              shapes: studio.shapes.filter(
+                                (s) => s.id !== selectedShape.id
+                              ),
+                            },
+                            'Deleted Shape Layer'
+                          );
+                          setSelectedShapeId(null);
+                        }}
+                        className="text-red-400 hover:underline cursor-pointer"
+                      >
+                        Delete Shape
+                      </button>
+                    </div>
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
+                        <label className="block text-neutral-300 mb-1">
+                          Fill Color & Opacity
+                        </label>
+                        <div className="flex items-center gap-2">
+                          <input
+                            type="color"
+                            value={selectedShape.fillColor}
+                            onChange={(e) =>
+                              setStudio((prev) => ({
+                                ...prev,
+                                shapes: prev.shapes.map((s) =>
+                                  s.id === selectedShape.id
+                                    ? { ...s, fillColor: e.target.value }
+                                    : s
+                                ),
+                              }))
+                            }
+                            className="w-7 h-7 rounded cursor-pointer"
+                          />
+                          <input
+                            type="range"
+                            min={0}
+                            max={1}
+                            step={0.05}
+                            value={selectedShape.fillOpacity}
+                            onChange={(e) =>
+                              setStudio((prev) => ({
+                                ...prev,
+                                shapes: prev.shapes.map((s) =>
+                                  s.id === selectedShape.id
+                                    ? {
+                                        ...s,
+                                        fillOpacity: Number(e.target.value),
+                                      }
+                                    : s
+                                ),
+                              }))
+                            }
+                            className="flex-1"
+                          />
+                        </div>
+                      </div>
+                      <div>
+                        <label className="block text-neutral-300 mb-1">
+                          Border Color & Width
+                        </label>
+                        <div className="flex items-center gap-2">
+                          <input
+                            type="color"
+                            value={selectedShape.strokeColor}
+                            onChange={(e) =>
+                              setStudio((prev) => ({
+                                ...prev,
+                                shapes: prev.shapes.map((s) =>
+                                  s.id === selectedShape.id
+                                    ? { ...s, strokeColor: e.target.value }
+                                    : s
+                                ),
+                              }))
+                            }
+                            className="w-7 h-7 rounded cursor-pointer"
+                          />
+                          <input
+                            type="range"
+                            min={0}
+                            max={16}
+                            value={selectedShape.strokeWidth}
+                            onChange={(e) =>
+                              setStudio((prev) => ({
+                                ...prev,
+                                shapes: prev.shapes.map((s) =>
+                                  s.id === selectedShape.id
+                                    ? {
+                                        ...s,
+                                        strokeWidth: Number(e.target.value),
+                                      }
+                                    : s
+                                ),
+                              }))
+                            }
+                            className="flex-1"
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Poster Header & Typography Quick Editor */}
+                <div className="p-3.5 rounded-xl bg-[#11141E] border border-neutral-800 space-y-2.5">
+                  <div className="flex items-center justify-between">
+                    <span className="font-semibold text-[#F3D068] uppercase tracking-wider">
+                      Poster Header & Program Bar
+                    </span>
+                    <label className="inline-flex items-center gap-1 text-[11px] text-neutral-300 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={studio.showHeaderLockup}
+                        onChange={(e) =>
+                          setStudio((prev) => ({
+                            ...prev,
+                            showHeaderLockup: e.target.checked,
+                          }))
+                        }
+                      />
+                      <span>Show Header</span>
+                    </label>
+                  </div>
+                  <input
+                    type="text"
+                    value={studio.title}
+                    onChange={(e) =>
+                      setStudio((prev) => ({ ...prev, title: e.target.value }))
+                    }
+                    placeholder="Main Poster Headline"
+                    className="w-full px-2.5 py-1.5 rounded bg-[#090B10] border border-neutral-700 text-white"
+                  />
+                  <input
+                    type="text"
+                    value={studio.subtitle}
+                    onChange={(e) =>
+                      setStudio((prev) => ({
+                        ...prev,
+                        subtitle: e.target.value,
+                      }))
+                    }
+                    placeholder="Class Subtitle"
+                    className="w-full px-2.5 py-1.5 rounded bg-[#090B10] border border-neutral-700 text-white"
+                  />
+                  <input
+                    type="text"
+                    value={studio.programDetails}
+                    onChange={(e) =>
+                      setStudio((prev) => ({
+                        ...prev,
+                        programDetails: e.target.value,
+                      }))
+                    }
+                    placeholder="Date | Program No | Venue"
+                    className="w-full px-2.5 py-1.5 rounded bg-[#090B10] border border-neutral-700 text-white"
+                  />
+                </div>
+
+                {/* All Scholar Cards & Layers Stack */}
                 <div className="space-y-2">
                   <div className="flex items-center justify-between text-neutral-400 font-semibold uppercase tracking-wider">
-                    <span>
-                      Scholar Layers ({studio.cards.length} on 1 Page)
-                    </span>
-                    <span>Click to Select / Drag</span>
+                    <span>Scholar Layers ({studio.cards.length})</span>
+                    <button
+                      type="button"
+                      onClick={handleAddNewParticipantCard}
+                      className="text-[#00D4FF] hover:underline cursor-pointer"
+                    >
+                      + Add Scholar
+                    </button>
                   </div>
-                  <div className="space-y-1.5 max-h-72 overflow-y-auto pr-1">
+
+                  <div className="space-y-1.5 max-h-64 overflow-y-auto pr-1">
                     {studio.cards.map((card) => (
                       <div
                         key={card.id}
                         onClick={() => {
+                          clearSelectionIds();
                           setSelectedCardId(card.id);
-                          setSelectedOverlayId(null);
                         }}
                         className={`p-2 rounded-lg border flex items-center justify-between gap-2 cursor-pointer ${
                           selectedCardId === card.id
@@ -1579,7 +3517,8 @@ export const PosterPhotoshopStudio: React.FC<PosterPhotoshopStudioProps> = ({
                           <img
                             src={card.photoUrl}
                             alt={card.fullName}
-                            className="w-7 h-7 rounded object-cover shrink-0"
+                            referrerPolicy="no-referrer"
+                            className="w-7 h-7 rounded object-cover shrink-0 border border-[#D4AF37]/50"
                           />
                           <div className="min-w-0">
                             <div className="font-semibold text-white truncate">
@@ -1590,27 +3529,51 @@ export const PosterPhotoshopStudio: React.FC<PosterPhotoshopStudioProps> = ({
                             </div>
                           </div>
                         </div>
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setStudio((prev) => ({
-                              ...prev,
-                              cards: prev.cards.map((c) =>
-                                c.id === card.id
-                                  ? { ...c, visible: !c.visible }
-                                  : c
-                              ),
-                            }));
-                          }}
-                          className="p-1 text-neutral-400 hover:text-white cursor-pointer"
-                        >
-                          {card.visible ? (
-                            <Eye className="w-3.5 h-3.5" />
-                          ) : (
-                            <EyeOff className="w-3.5 h-3.5 text-red-400" />
-                          )}
-                        </button>
+                        <div className="flex items-center gap-1">
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setStudio((prev) => ({
+                                ...prev,
+                                cards: prev.cards.map((c) =>
+                                  c.id === card.id
+                                    ? { ...c, locked: !c.locked }
+                                    : c
+                                ),
+                              }));
+                            }}
+                            className="p-1 text-neutral-400 hover:text-white cursor-pointer"
+                            title={card.locked ? 'Unlock Layer' : 'Lock Layer'}
+                          >
+                            {card.locked ? (
+                              <Lock className="w-3.5 h-3.5 text-amber-400" />
+                            ) : (
+                              <Unlock className="w-3.5 h-3.5" />
+                            )}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setStudio((prev) => ({
+                                ...prev,
+                                cards: prev.cards.map((c) =>
+                                  c.id === card.id
+                                    ? { ...c, visible: !c.visible }
+                                    : c
+                                ),
+                              }));
+                            }}
+                            className="p-1 text-neutral-400 hover:text-white cursor-pointer"
+                          >
+                            {card.visible ? (
+                              <Eye className="w-3.5 h-3.5" />
+                            ) : (
+                              <EyeOff className="w-3.5 h-3.5 text-red-400" />
+                            )}
+                          </button>
+                        </div>
                       </div>
                     ))}
                   </div>
@@ -1619,11 +3582,97 @@ export const PosterPhotoshopStudio: React.FC<PosterPhotoshopStudioProps> = ({
             )}
 
             {/* ===============================================================
-                INSPECTOR TAB 2: PHOTOSHOP COLOR GRADING & ADJUSTMENTS
+                TAB 2: PHOTOSHOP ADJUSTMENTS, COLOR GRADING & LUT PRESETS
                =============================================================== */}
             {rightTab === 'ADJUSTMENTS' && (
               <div className="space-y-4">
-                <div className="p-3.5 rounded-xl bg-[#11141E] border border-neutral-800 space-y-3.5">
+                {/* 1-Click Filter LUT Presets */}
+                <div className="p-3.5 rounded-xl bg-[#11141E] border border-neutral-800 space-y-2.5">
+                  <div className="font-semibold text-[#F3D068] uppercase tracking-wider">
+                    1-Click Photoshop Filter Presets
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    {[
+                      {
+                        name: 'Original Natural',
+                        vals: {
+                          brightness: 100,
+                          contrast: 100,
+                          saturation: 100,
+                          sepia: 0,
+                          hueRotate: 0,
+                        },
+                      },
+                      {
+                        name: 'Warm Rose Gold',
+                        vals: {
+                          brightness: 104,
+                          contrast: 108,
+                          saturation: 118,
+                          sepia: 14,
+                          hueRotate: -5,
+                        },
+                      },
+                      {
+                        name: 'Crisp HD Print',
+                        vals: {
+                          brightness: 103,
+                          contrast: 122,
+                          saturation: 115,
+                          sepia: 0,
+                          hueRotate: 0,
+                        },
+                      },
+                      {
+                        name: 'Vintage Parchment',
+                        vals: {
+                          brightness: 98,
+                          contrast: 106,
+                          saturation: 85,
+                          sepia: 38,
+                          hueRotate: 0,
+                        },
+                      },
+                      {
+                        name: 'Vivid Stage Pop',
+                        vals: {
+                          brightness: 105,
+                          contrast: 116,
+                          saturation: 145,
+                          sepia: 0,
+                          hueRotate: 0,
+                        },
+                      },
+                      {
+                        name: 'Monochrome Silver',
+                        vals: {
+                          brightness: 105,
+                          contrast: 125,
+                          saturation: 0,
+                          sepia: 8,
+                          hueRotate: 0,
+                        },
+                      },
+                    ].map((preset) => (
+                      <button
+                        key={preset.name}
+                        type="button"
+                        onClick={() =>
+                          pushHistory(
+                            { ...studio, ...preset.vals },
+                            `Applied Filter: ${preset.name}`
+                          )
+                        }
+                        className="p-2 rounded-lg bg-[#090B10] hover:bg-neutral-800 border border-neutral-700 text-neutral-200 text-left font-medium cursor-pointer"
+                      >
+                        {preset.name}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Fine Adjustment Sliders */}
+                <div className="p-3.5 rounded-xl bg-[#11141E] border border-neutral-800 space-y-3">
                   <div className="flex items-center justify-between">
                     <span className="font-semibold text-[#F3D068] uppercase tracking-wider">
                       Color & Lighting Grading
@@ -1631,20 +3680,25 @@ export const PosterPhotoshopStudio: React.FC<PosterPhotoshopStudioProps> = ({
                     <button
                       type="button"
                       onClick={() =>
-                        setStudio((prev) => ({
-                          ...prev,
-                          brightness: 100,
-                          contrast: 100,
-                          saturation: 100,
-                          sepia: 0,
-                          hueRotate: 0,
-                          goldGlow: 45,
-                          vignette: 35,
-                        }))
+                        pushHistory(
+                          {
+                            ...studio,
+                            brightness: 100,
+                            contrast: 100,
+                            saturation: 100,
+                            exposure: 100,
+                            sepia: 0,
+                            hueRotate: 0,
+                            blurPx: 0,
+                            goldGlow: 35,
+                            vignette: 12,
+                          },
+                          'Reset Color Adjustments'
+                        )
                       }
                       className="text-[#00D4FF] hover:underline cursor-pointer"
                     >
-                      Reset Filters
+                      Reset All
                     </button>
                   </div>
 
@@ -1660,7 +3714,7 @@ export const PosterPhotoshopStudio: React.FC<PosterPhotoshopStudioProps> = ({
                       label: 'Contrast',
                       key: 'contrast' as const,
                       min: 50,
-                      max: 150,
+                      max: 160,
                       unit: '%',
                     },
                     {
@@ -1671,7 +3725,14 @@ export const PosterPhotoshopStudio: React.FC<PosterPhotoshopStudioProps> = ({
                       unit: '%',
                     },
                     {
-                      label: 'Warm Gold Sepia',
+                      label: 'Exposure',
+                      key: 'exposure' as const,
+                      min: 60,
+                      max: 140,
+                      unit: '%',
+                    },
+                    {
+                      label: 'Warm Sepia Tone',
                       key: 'sepia' as const,
                       min: 0,
                       max: 100,
@@ -1685,7 +3746,14 @@ export const PosterPhotoshopStudio: React.FC<PosterPhotoshopStudioProps> = ({
                       unit: '°',
                     },
                     {
-                      label: 'Gold Spotlight Glow',
+                      label: 'Soft Blur',
+                      key: 'blurPx' as const,
+                      min: 0,
+                      max: 12,
+                      unit: 'px',
+                    },
+                    {
+                      label: 'Ambient Spotlight',
                       key: 'goldGlow' as const,
                       min: 0,
                       max: 100,
@@ -1727,30 +3795,118 @@ export const PosterPhotoshopStudio: React.FC<PosterPhotoshopStudioProps> = ({
             )}
 
             {/* ===============================================================
-                INSPECTOR TAB 3: BACKGROUND THEMES, FRAME SHAPES & AUTO-LAYOUT
+                TAB 3: TEMPLATE, PRE-MADE POSTER UPLOAD & AUTO-LAYOUTS
                =============================================================== */}
             {rightTab === 'LAYOUT' && (
               <div className="space-y-4">
+                {/* Upload Pre-Made Poster Section */}
+                <div className="p-3.5 rounded-xl bg-[#141A29] border border-indigo-500/50 space-y-3">
+                  <div className="font-semibold text-indigo-300 uppercase tracking-wider">
+                    Pre-Made Poster Upload (ImgBB Hosted)
+                  </div>
+                  <p className="text-[11px] text-neutral-300 leading-relaxed">
+                    Already designed a poster in Photoshop/Canva? Upload it here to use as the full poster or edit on top of it.
+                  </p>
+                  <label className="w-full inline-flex items-center justify-center gap-1.5 py-2.5 px-3 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-bold cursor-pointer shadow">
+                    <Upload className="w-4 h-4" />
+                    <span>
+                      {uploadingAsset
+                        ? 'Uploading to ImgBB...'
+                        : 'Upload Pre-Made Poster Image'}
+                    </span>
+                    <input
+                      type="file"
+                      accept="image/*"
+                      className="hidden"
+                      onChange={handleUploadPreMadeBasePoster}
+                    />
+                  </label>
+
+                  {studio.customBgUrl && (
+                    <div className="space-y-2 pt-2 border-t border-neutral-800">
+                      <div className="flex items-center justify-between text-neutral-300">
+                        <span>Uploaded Poster Opacity</span>
+                        <span>{studio.customBgOpacity}%</span>
+                      </div>
+                      <input
+                        type="range"
+                        min={10}
+                        max={100}
+                        value={studio.customBgOpacity}
+                        onChange={(e) =>
+                          setStudio((prev) => ({
+                            ...prev,
+                            customBgOpacity: Number(e.target.value),
+                          }))
+                        }
+                        className="w-full"
+                      />
+                      <button
+                        type="button"
+                        onClick={() =>
+                          pushHistory(
+                            {
+                              ...studio,
+                              customBgUrl: null,
+                              bgTheme: 'BOTANICAL_BLUSH',
+                              showCompartmentBoxes: true,
+                              showHeaderLockup: true,
+                            },
+                            'Removed Uploaded Background'
+                          )
+                        }
+                        className="w-full py-1.5 rounded bg-red-950/60 text-red-300 border border-red-800/50 cursor-pointer"
+                      >
+                        Remove Uploaded Poster & Restore Official Template
+                      </button>
+                    </div>
+                  )}
+                </div>
+
+                {/* Theme & Compartment Toggles */}
                 <div className="p-3.5 rounded-xl bg-[#11141E] border border-neutral-800 space-y-3">
                   <div className="font-semibold text-[#F3D068] uppercase tracking-wider">
-                    Canvas Background Theme
+                    Poster Theme & Compartments
                   </div>
                   <div className="grid grid-cols-2 gap-2">
                     {(
                       [
-                        { id: 'OBSIDIAN_GOLD', label: 'Obsidian & Gold' },
-                        { id: 'ROYAL_NAVY', label: 'Royal Navy & Gold' },
-                        { id: 'IMPERIAL_EMERALD', label: 'Imperial Emerald' },
-                        { id: 'VELVET_CRIMSON', label: 'Velvet Crimson' },
+                        {
+                          id: 'BOTANICAL_BLUSH',
+                          label: 'Botanical Blush (Official)',
+                          titleCol: '#7A4938',
+                        },
+                        {
+                          id: 'OBSIDIAN_GOLD',
+                          label: 'Obsidian & Gold',
+                          titleCol: '#FFFFFF',
+                        },
+                        {
+                          id: 'ROYAL_NAVY',
+                          label: 'Royal Navy',
+                          titleCol: '#FFFFFF',
+                        },
+                        {
+                          id: 'IMPERIAL_EMERALD',
+                          label: 'Imperial Emerald',
+                          titleCol: '#FFFFFF',
+                        },
                       ] as const
                     ).map((th) => (
                       <button
                         key={th.id}
                         type="button"
                         onClick={() =>
-                          setStudio((prev) => ({ ...prev, bgTheme: th.id }))
+                          pushHistory(
+                            {
+                              ...studio,
+                              bgTheme: th.id,
+                              titleColor: th.titleCol,
+                            },
+                            `Switched Theme to ${th.label}`
+                          )
                         }
-                        className={`p-2.5 rounded-lg border text-left font-medium cursor-pointer ${
+                        className={`p-2 rounded-lg border text-left font-medium cursor-pointer ${
                           studio.bgTheme === th.id
                             ? 'bg-[#D4AF37]/20 border-[#D4AF37] text-[#F3D068]'
                             : 'bg-[#090B10] border-neutral-800 text-neutral-300'
@@ -1761,92 +3917,165 @@ export const PosterPhotoshopStudio: React.FC<PosterPhotoshopStudioProps> = ({
                     ))}
                   </div>
 
-                  <label className="w-full inline-flex items-center justify-center gap-1.5 py-2 px-3 rounded-lg bg-[#161A26] text-[#F3D068] border border-[#D4AF37]/40 font-medium cursor-pointer mt-2">
-                    <Upload className="w-3.5 h-3.5" />
-                    <span>Upload Custom Background Texture</span>
+                  <label className="flex items-center justify-between pt-2 text-neutral-300 cursor-pointer">
+                    <span>Show 8 Category Compartment Boxes</span>
                     <input
-                      type="file"
-                      accept="image/*"
-                      className="hidden"
-                      onChange={(e) => {
-                        const file = e.target.files?.[0];
-                        if (!file) return;
-                        const reader = new FileReader();
-                        reader.onload = () =>
-                          setStudio((prev) => ({
-                            ...prev,
-                            customBgUrl: String(reader.result || ''),
-                          }));
-                        reader.readAsDataURL(file);
-                      }}
+                      type="checkbox"
+                      checked={studio.showCompartmentBoxes}
+                      onChange={(e) =>
+                        setStudio((prev) => ({
+                          ...prev,
+                          showCompartmentBoxes: e.target.checked,
+                        }))
+                      }
                     />
                   </label>
                 </div>
 
-                {/* Portrait Frame Shape */}
-                <div className="p-3.5 rounded-xl bg-[#11141E] border border-neutral-800 space-y-3">
-                  <div className="font-semibold text-[#F3D068] uppercase tracking-wider">
-                    Scholar Portrait Frame Style
-                  </div>
-                  <div className="grid grid-cols-2 gap-2">
-                    {(
-                      [
-                        { id: 'ROUNDED', label: 'Rounded Gold Card' },
-                        { id: 'CIRCLE', label: 'Circular Medallion' },
-                        { id: 'ARCH', label: 'Classical Arch' },
-                        { id: 'SQUARE', label: 'Editorial Square' },
-                      ] as const
-                    ).map((shape) => (
-                      <button
-                        key={shape.id}
-                        type="button"
-                        onClick={() =>
-                          setStudio((prev) => ({
-                            ...prev,
-                            frameShape: shape.id,
-                          }))
-                        }
-                        className={`p-2 rounded-lg border text-center cursor-pointer ${
-                          studio.frameShape === shape.id
-                            ? 'bg-[#D4AF37]/20 border-[#D4AF37] text-[#F3D068]'
-                            : 'bg-[#090B10] border-neutral-800 text-neutral-300'
-                        }`}
-                      >
-                        {shape.label}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                {/* 1-Page Auto-Grid Arrange Presets */}
+                {/* Auto-Arrange Layouts */}
                 <div className="p-3.5 rounded-xl bg-[#11141E] border border-neutral-800 space-y-2.5">
                   <div className="font-semibold text-[#F3D068] uppercase tracking-wider">
-                    Auto-Arrange All Scholars on 1 Page
+                    Auto-Arrange Participant Cards
                   </div>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      pushHistory(
+                        {
+                          ...studio,
+                          canvasWidth: 1600,
+                          canvasHeight: 1130,
+                          showCompartmentBoxes: true,
+                          cards: computeCompartmentCards(studio.cards),
+                        },
+                        'Arranged into Official 8 Compartments'
+                      )
+                    }
+                    className="w-full py-2 px-3 rounded-lg bg-[#D4AF37]/20 hover:bg-[#D4AF37]/30 border border-[#D4AF37] text-[#F3D068] font-bold cursor-pointer"
+                  >
+                    Arrange into Official 8 Compartments
+                  </button>
                   <div className="grid grid-cols-2 gap-2">
                     {[
-                      { cols: undefined, label: 'Smart Auto Grid' },
                       { cols: 3, label: '3-Column Grid' },
                       { cols: 4, label: '4-Column Grid' },
-                      { cols: 5, label: '5-Column Compact' },
+                      { cols: 5, label: '5-Column Grid' },
+                      { cols: 6, label: '6-Column Compact' },
                     ].map((preset) => (
                       <button
                         key={preset.label}
                         type="button"
                         onClick={() =>
-                          pushHistory({
-                            ...studio,
-                            cards: computeGridCards(
-                              studio.cards,
-                              preset.cols
-                            ),
-                          })
+                          pushHistory(
+                            {
+                              ...studio,
+                              showCompartmentBoxes: false,
+                              cards: computeGridCards(
+                                studio.cards,
+                                preset.cols,
+                                studio.canvasWidth
+                              ),
+                            },
+                            `Arranged ${preset.label}`
+                          )
                         }
                         className="p-2 rounded-lg bg-[#090B10] hover:bg-neutral-800 border border-neutral-700 text-neutral-200 cursor-pointer"
                       >
                         {preset.label}
                       </button>
                     ))}
+                  </div>
+                </div>
+
+                {/* Portrait Frame Style */}
+                <div className="p-3.5 rounded-xl bg-[#11141E] border border-neutral-800 space-y-2.5">
+                  <div className="font-semibold text-[#F3D068] uppercase tracking-wider">
+                    Portrait Frame Shape
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    {(
+                      [
+                        { id: 'ROUNDED', label: 'Rounded Card' },
+                        { id: 'CIRCLE', label: 'Circular Medallion' },
+                        { id: 'ARCH', label: 'Classical Arch' },
+                        { id: 'SQUARE', label: 'Sharp Square' },
+                      ] as const
+                    ).map((sh) => (
+                      <button
+                        key={sh.id}
+                        type="button"
+                        onClick={() =>
+                          setStudio((prev) => ({
+                            ...prev,
+                            frameShape: sh.id,
+                          }))
+                        }
+                        className={`p-2 rounded-lg border text-center cursor-pointer ${
+                          studio.frameShape === sh.id
+                            ? 'bg-[#D4AF37]/20 border-[#D4AF37] text-[#F3D068]'
+                            : 'bg-[#090B10] border-neutral-800 text-neutral-300'
+                        }`}
+                      >
+                        {sh.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* ===============================================================
+                TAB 4: INTERACTIVE PHOTOSHOP HISTORY STACK
+               =============================================================== */}
+            {rightTab === 'HISTORY' && (
+              <div className="space-y-3">
+                <div className="flex items-center justify-between text-neutral-400 font-semibold uppercase tracking-wider">
+                  <span>History States ({history.length + 1})</span>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={handleUndo}
+                      disabled={history.length === 0}
+                      className="text-[#00D4FF] disabled:opacity-30 cursor-pointer"
+                    >
+                      Undo
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleRedo}
+                      disabled={redoStack.length === 0}
+                      className="text-[#00D4FF] disabled:opacity-30 cursor-pointer"
+                    >
+                      Redo
+                    </button>
+                  </div>
+                </div>
+
+                <div className="space-y-1.5">
+                  {history.map((snap, idx) => (
+                    <button
+                      key={idx}
+                      type="button"
+                      onClick={() => {
+                        const target = history[idx];
+                        const after = history.slice(idx + 1);
+                        setRedoStack([...after, studio, ...redoStack]);
+                        setHistory(history.slice(0, idx));
+                        setStudio(target);
+                      }}
+                      className="w-full p-2.5 rounded-lg bg-[#11141E] hover:bg-neutral-800 border border-neutral-800 text-left flex items-center justify-between text-neutral-300 cursor-pointer"
+                    >
+                      <span>
+                        #{idx + 1} · {snap.historyLabel}
+                      </span>
+                      <span className="text-[10px] text-neutral-500">
+                        Restore
+                      </span>
+                    </button>
+                  ))}
+                  <div className="p-2.5 rounded-lg bg-[#162038] border border-[#00D4FF] text-white font-semibold flex items-center justify-between">
+                    <span>Current: {studio.historyLabel}</span>
+                    <span className="text-[10px] text-[#00D4FF]">Active</span>
                   </div>
                 </div>
               </div>
@@ -1856,16 +4085,16 @@ export const PosterPhotoshopStudio: React.FC<PosterPhotoshopStudioProps> = ({
       </div>
 
       {/* =====================================================================
-          POST TO FEED MODAL INSIDE STUDIO
+          SHARE TO FEED MODAL INSIDE STUDIO
          ===================================================================== */}
       {showFeedPrompt && (
         <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="w-full max-w-md rounded-2xl bg-[#0E1118] border border-[#D4AF37]/50 p-6 space-y-4 shadow-2xl">
             <h3 className="font-display text-lg font-bold text-white">
-              Post Class {poster.classCode} Poster to Feed
+              Share Class {poster.classCode} Poster to Public Feed
             </h3>
             <p className="text-xs text-neutral-400">
-              This will export your current high-resolution poster and publish it to the Class {poster.classCode} Feed.
+              Exports your edited high-resolution poster, uploads it to ImgBB, and publishes it to the Class {poster.classCode} Feed.
             </p>
             <div>
               <label className="block text-xs text-neutral-300 mb-1">
@@ -1890,9 +4119,9 @@ export const PosterPhotoshopStudio: React.FC<PosterPhotoshopStudioProps> = ({
                 type="button"
                 disabled={postingFeed}
                 onClick={handleTriggerPostToFeed}
-                className="px-4 py-2 rounded-lg bg-[#D4AF37] text-neutral-950 font-semibold text-xs cursor-pointer"
+                className="px-4 py-2 rounded-lg bg-[#D4AF37] text-neutral-950 font-bold text-xs cursor-pointer"
               >
-                {postingFeed ? 'Posting...' : 'Confirm Post to Feed'}
+                {postingFeed ? 'Publishing...' : 'Publish to Feed'}
               </button>
             </div>
           </div>
