@@ -2472,37 +2472,66 @@ const ALLOWED_EXTENSIONS = new Set([
 ]);
 
 const IMAGE_EXTENSIONS = new Set(['.jpg', '.jpeg', '.png', '.webp', '.gif']);
-const IMGBB_API_KEY =
-  process.env.IMGBB_API_KEY || '9551c6c91a49c0c4b17819b26554d812';
+const IMGBB_API_KEY = process.env.IMGBB_API_KEY;
+
 
 async function uploadToImgBB(
   base64Clean: string,
   name: string
 ): Promise<string | null> {
-  try {
-    const formData = new URLSearchParams();
-    formData.append('key', IMGBB_API_KEY);
-    formData.append('image', base64Clean);
-    formData.append('name', name);
+  const apiKey = process.env.IMGBB_API_KEY;
 
-    const response = await fetch('https://api.imgbb.com/1/upload', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/x-www-form-urlencoded',
-      },
-      body: formData.toString(),
-    });
-
-    const json: any = await response.json();
-    if (response.ok && json?.data?.url) {
-      return String(json.data.url);
-    }
-    console.warn('ImgBB response non-ok:', json);
-    return null;
-  } catch (err) {
-    console.warn('ImgBB upload fallback to local:', err);
+  if (!apiKey) {
+    console.warn("ImgBB upload skipped: IMGBB_API_KEY is not configured.");
     return null;
   }
+
+  try {
+    const formData = new URLSearchParams();
+    formData.append("key", apiKey);
+    formData.append("image", base64Clean);
+    formData.append("name", name);
+
+    const response = await fetch(
+      "https://api.imgbb.com/1/upload",
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+        },
+        body: formData.toString(),
+      }
+    );
+
+    const responseText = await response.text();
+
+    let json: any;
+
+    try {
+      json = JSON.parse(responseText);
+    } catch {
+      console.error("ImgBB returned a non-JSON response:", {
+        status: response.status,
+        preview: responseText.slice(0, 300),
+      });
+      return null;
+    }
+
+    if (!response.ok || !json?.success || !json?.data?.url) {
+      console.warn("ImgBB upload failed:", {
+        status: response.status,
+        error: json?.error?.message || "Upload unsuccessful",
+      });
+      return null;
+    }
+
+    return json.data.url;
+  } catch (err) {
+    console.warn("ImgBB upload request failed:", err);
+    return null;
+  }
+}
+
 }
 
 app.post(
