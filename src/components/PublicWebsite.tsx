@@ -40,6 +40,7 @@ import {
 import { IlmLogo, downloadPosterAsPng } from './IlmLogo.tsx';
 import { PosterStageCard } from './PosterStageCard.tsx';
 import { PosterPhotoshopStudio } from './PosterPhotoshopStudio.tsx';
+import { ILM_JUNIOR_PROJECTS } from '../lib/ilmJuniorProjects.ts';
 
 export type PublicTab =
   | 'home'
@@ -137,6 +138,34 @@ export const PublicWebsite: React.FC<PublicWebsiteProps> = ({
   // Selected Participant Public Profile Modal
   const [inspectedParticipant, setInspectedParticipant] =
     useState<ParticipantRecord | null>(null);
+  const [selectedAboutProject, setSelectedAboutProject] = useState<
+    'ALL' | number
+  >('ALL');
+
+  const canManageClass = (clsCode: ClassCode): boolean => {
+    if (!currentAdmin) return false;
+    if (
+      currentAdmin.role === 'SUPER_ADMIN' ||
+      currentAdmin.role === 'TEACHER'
+    ) {
+      return true;
+    }
+    return (
+      currentAdmin.role === 'CLASS_ADMIN' &&
+      currentAdmin.assignedClass === clsCode
+    );
+  };
+
+  const getClientAuthHeaders = (): Record<string, string> => {
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+    };
+    const token = sessionStorage.getItem('ilm_admin_session_token');
+    if (token) {
+      headers.Authorization = `Bearer ${token}`;
+    }
+    return headers;
+  };
 
   // Sequence of published posters for the Home Featured Poster showcase
   const featuredSequence = useMemo(() => {
@@ -385,15 +414,17 @@ export const PublicWebsite: React.FC<PublicWebsiteProps> = ({
           <IlmLogo size="sm" showSubtitle />
         </button>
 
-        {/* Zone 2: 5 concise single-line text navigation links */}
+        {/* Zone 2: Primary navigation links (Home, Classes, Posters, Feed, Weekly Results, Library, About ILM) */}
         <nav className="hidden md:flex items-center gap-6 text-sm font-medium text-neutral-300">
           {(
             [
               { id: 'home', label: 'Home' },
               { id: 'classes', label: 'Classes' },
               { id: 'posters', label: 'Posters' },
+              { id: 'feed', label: 'Feed' },
               { id: 'results', label: 'Weekly Results' },
               { id: 'library', label: 'Library' },
+              { id: 'about', label: 'About ILM' },
             ] as const
           ).map((item) => (
             <button
@@ -449,8 +480,9 @@ export const PublicWebsite: React.FC<PublicWebsiteProps> = ({
           <div className="flex items-center gap-4">
             {(
               [
+                { id: 'feed', label: 'Public Feed' },
                 { id: 'officers', label: 'Class Teachers & Officers' },
-                { id: 'about', label: 'About ILM' },
+                { id: 'about', label: 'About ILM (10 Projects)' },
                 { id: 'contact', label: 'Contact' },
               ] as const
             ).map((sub) => (
@@ -501,59 +533,66 @@ export const PublicWebsite: React.FC<PublicWebsiteProps> = ({
                   </p>
                 </div>
 
-                <div className="flex flex-wrap items-center gap-2">
-                  {/* Quick Upload Pre-Made Poster to Feed */}
-                  <label className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-gradient-to-r from-[#C89D2E] via-[#E8C55B] to-[#C89D2E] hover:brightness-110 text-neutral-950 font-bold text-xs cursor-pointer shadow">
-                    <Upload className="w-3.5 h-3.5" />
-                    <span>+ Upload & Post to Feed</span>
-                    <input
-                      type="file"
-                      accept="image/png,image/jpeg,image/webp,image/gif"
-                      className="hidden"
-                      onChange={async (e) => {
-                        const file = e.target.files?.[0];
-                        if (!file) return;
-                        try {
-                          const base64Data = await new Promise<string>(
-                            (resolve, reject) => {
-                              const reader = new FileReader();
-                              reader.onload = () =>
-                                resolve(String(reader.result || ''));
-                              reader.onerror = () =>
-                                reject(new Error('Failed to read file'));
-                              reader.readAsDataURL(file);
-                            }
-                          );
-                          const targetCls =
-                            feedClassFilter === 'ALL' ? 'U1' : feedClassFilter;
-                          const targetPoster =
-                            data.posters.find(
-                              (p) => p.classCode === targetCls
-                            ) || data.posters[0];
-                          if (!targetPoster) return;
-                          await fetch(
-                            `/api/public/posters/${targetPoster.id}/share-to-feed`,
-                            {
-                              method: 'POST',
-                              headers: { 'Content-Type': 'application/json' },
-                              body: JSON.stringify({
-                                title: `Class ${targetCls} — ${file.name.replace(/\.[^.]+$/, '')}`,
-                                caption: `Uploaded and shared to the ILM Class ${targetCls} Public Feed.`,
-                                mediaUrl: base64Data,
-                                submittedByName: `Class ${targetCls} Feed`,
-                              }),
-                            }
-                          );
-                          if (onRefreshData) onRefreshData();
-                        } catch {
-                          // ignore
-                        } finally {
-                          e.target.value = '';
-                        }
-                      }}
-                    />
-                  </label>
-                </div>
+                {currentAdmin && (
+                  <div className="flex flex-wrap items-center gap-2">
+                    {/* Quick Upload Pre-Made Poster to Feed (Strictly for Logged-In Super Admin, Teacher, or Class Admin) */}
+                    <label className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-gradient-to-r from-[#C89D2E] via-[#E8C55B] to-[#C89D2E] hover:brightness-110 text-neutral-950 font-bold text-xs cursor-pointer shadow">
+                      <Upload className="w-3.5 h-3.5" />
+                      <span>+ Upload & Post to Feed</span>
+                      <input
+                        type="file"
+                        accept="image/png,image/jpeg,image/webp,image/gif"
+                        className="hidden"
+                        onChange={async (e) => {
+                          const file = e.target.files?.[0];
+                          if (!file) return;
+                          try {
+                            const base64Data = await new Promise<string>(
+                              (resolve, reject) => {
+                                const reader = new FileReader();
+                                reader.onload = () =>
+                                  resolve(String(reader.result || ''));
+                                reader.onerror = () =>
+                                  reject(new Error('Failed to read file'));
+                                reader.readAsDataURL(file);
+                              }
+                            );
+                            const targetCls =
+                              currentAdmin.role === 'CLASS_ADMIN' &&
+                              currentAdmin.assignedClass
+                                ? currentAdmin.assignedClass
+                                : feedClassFilter === 'ALL'
+                                ? 'U1'
+                                : feedClassFilter;
+                            const targetPoster =
+                              data.posters.find(
+                                (p) => p.classCode === targetCls
+                              ) || data.posters[0];
+                            if (!targetPoster) return;
+                            await fetch(
+                              `/api/public/posters/${targetPoster.id}/share-to-feed`,
+                              {
+                                method: 'POST',
+                                headers: getClientAuthHeaders(),
+                                body: JSON.stringify({
+                                  title: `Class ${targetCls} — ${file.name.replace(/\.[^.]+$/, '')}`,
+                                  caption: `Uploaded and shared to the ILM Class ${targetCls} Public Feed.`,
+                                  mediaUrl: base64Data,
+                                  submittedByName: currentAdmin.name,
+                                }),
+                              }
+                            );
+                            if (onRefreshData) onRefreshData();
+                          } catch {
+                            // ignore
+                          } finally {
+                            e.target.value = '';
+                          }
+                        }}
+                      />
+                    </label>
+                  </div>
+                )}
               </div>
 
               {/* Class Filter Pills & Search */}
@@ -657,14 +696,16 @@ export const PublicWebsite: React.FC<PublicWebsiteProps> = ({
                                 <Share2 className="w-3.5 h-3.5" />
                               )}
                             </button>
-                            <button
-                              type="button"
-                              onClick={() => handleEditFeedPostInStudio(post)}
-                              className="p-1.5 rounded-lg bg-[#161B28] hover:bg-[#1E2536] text-[#F3D068] border border-[#D4AF37]/40 cursor-pointer"
-                              title="Edit in Photoshop Studio"
-                            >
-                              <Sliders className="w-3.5 h-3.5" />
-                            </button>
+                            {canManageClass(post.classCode) && (
+                              <button
+                                type="button"
+                                onClick={() => handleEditFeedPostInStudio(post)}
+                                className="p-1.5 rounded-lg bg-[#161B28] hover:bg-[#1E2536] text-[#F3D068] border border-[#D4AF37]/40 cursor-pointer"
+                                title="Edit in Photoshop Studio"
+                              >
+                                <Sliders className="w-3.5 h-3.5" />
+                              </button>
+                            )}
                             <button
                               type="button"
                               onClick={() => handleDownloadFeedPost(post)}
@@ -709,6 +750,7 @@ export const PublicWebsite: React.FC<PublicWebsiteProps> = ({
                   poster={currentFeaturedPoster}
                   liveParticipants={data.participants}
                   isHero
+                  canManage={false}
                   onChangePoster={handleNextPoster}
                   onPrevPoster={handlePrevPoster}
                   totalPostersCount={featuredSequence.length}
@@ -1247,6 +1289,7 @@ export const PublicWebsite: React.FC<PublicWebsiteProps> = ({
                           key={poster.id}
                           poster={poster}
                           liveParticipants={data.participants}
+                          canManage={canManageClass(poster.classCode)}
                           onInspectPoster={(p) => setInspectedPoster(p)}
                           onOpenStudio={(p) => setStudioPoster(p)}
                           onPosterUpdated={onRefreshData}
@@ -1476,6 +1519,7 @@ export const PublicWebsite: React.FC<PublicWebsiteProps> = ({
                     key={poster.id}
                     poster={poster}
                     liveParticipants={data.participants}
+                    canManage={canManageClass(poster.classCode)}
                     onInspectPoster={(p) => setInspectedPoster(p)}
                     onOpenStudio={(p) => setStudioPoster(p)}
                     onPosterUpdated={onRefreshData}
@@ -1611,15 +1655,17 @@ export const PublicWebsite: React.FC<PublicWebsiteProps> = ({
                             </>
                           )}
                         </button>
-                        <button
-                          type="button"
-                          onClick={() => handleEditFeedPostInStudio(post)}
-                          className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-[#161A26] hover:bg-[#1E2436] text-[#F3D068] border border-[#D4AF37]/40 font-medium cursor-pointer"
-                          title="Open in Photoshop Studio to edit"
-                        >
-                          <Sliders className="w-3.5 h-3.5" />
-                          <span>Edit</span>
-                        </button>
+                        {canManageClass(post.classCode) && (
+                          <button
+                            type="button"
+                            onClick={() => handleEditFeedPostInStudio(post)}
+                            className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-[#161A26] hover:bg-[#1E2436] text-[#F3D068] border border-[#D4AF37]/40 font-medium cursor-pointer"
+                            title="Open in Photoshop Studio to edit"
+                          >
+                            <Sliders className="w-3.5 h-3.5" />
+                            <span>Edit</span>
+                          </button>
+                        )}
                         <button
                           type="button"
                           onClick={() => handleDownloadFeedPost(post)}
@@ -1986,10 +2032,10 @@ export const PublicWebsite: React.FC<PublicWebsiteProps> = ({
         )}
 
         {/* -------------------------------------------------------------------
-            TAB 7 & 8: ABOUT ILM & CONTACT
+            TAB 7 & 8: ABOUT ILM (WITH COMPLETE 10 JUNIOR ILM PROJECTS) & CONTACT
            ------------------------------------------------------------------- */}
         {(activeTab === 'about' || activeTab === 'contact') && (
-          <div className="max-w-4xl mx-auto space-y-10">
+          <div className="max-w-5xl mx-auto space-y-10">
             <div className="p-8 sm:p-10 rounded-2xl bg-[#0E1118] border border-[#D4AF37]/40">
               <IlmLogo size="lg" showSubtitle />
               <h1 className="font-display text-3xl font-bold text-white mt-6">
@@ -2013,7 +2059,7 @@ export const PublicWebsite: React.FC<PublicWebsiteProps> = ({
                     Compete
                   </div>
                   <p className="text-xs text-neutral-400 mt-1">
-                    Six structured categories per class: Naat (6), Speech (5), Aah Counter (1), Evolution (5), Marshal (1), and Grammarian (1).
+                    Eight structured roles per class: Qirat (1), Naat (5), Speech (5), Table Topic (5), Evolution (5), Aah Counter (1), Marshal (1), and Grammarian (1).
                   </p>
                 </div>
                 <div>
@@ -2024,6 +2070,211 @@ export const PublicWebsite: React.FC<PublicWebsiteProps> = ({
                     Official Best Speaker and Best Naat weekly recognitions preserved in a permanent public archive.
                   </p>
                 </div>
+              </div>
+            </div>
+
+            {/* ===============================================================
+                JUNIOR ILM: 10 COMPETENT COMMUNICATION PROJECTS CURRICULUM
+               =============================================================== */}
+            <div className="p-6 sm:p-8 rounded-2xl bg-[#0E1118] border-2 border-[#D4AF37]/45 space-y-6">
+              <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-neutral-800 pb-5">
+                <div>
+                  <span className="px-3 py-1 rounded-full bg-[#D4AF37]/15 border border-[#D4AF37]/40 text-[11px] font-bold uppercase tracking-widest text-[#F3D068]">
+                    Official Junior ILM Curriculum
+                  </span>
+                  <h2 className="font-display text-2xl sm:text-3xl font-bold text-white mt-2">
+                    Junior ILM — 10 Speech & Leadership Projects
+                  </h2>
+                  <p className="text-xs sm:text-sm text-neutral-400 mt-1">
+                    Complete step-by-step speech training curriculum from Project 1 (The Introductory Speech) to Project 10 (Inspire Your Audience).
+                  </p>
+                </div>
+              </div>
+
+              {/* Project Selector Pills */}
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setSelectedAboutProject('ALL')}
+                  className={`px-3.5 py-2 rounded-xl text-xs font-semibold border transition-all cursor-pointer ${
+                    selectedAboutProject === 'ALL'
+                      ? 'bg-[#D4AF37] text-neutral-950 border-[#D4AF37] shadow'
+                      : 'bg-[#121622] text-neutral-300 border-neutral-800 hover:text-white'
+                  }`}
+                >
+                  All 10 Projects
+                </button>
+                {ILM_JUNIOR_PROJECTS.map((proj) => (
+                  <button
+                    key={proj.number}
+                    type="button"
+                    onClick={() => setSelectedAboutProject(proj.number)}
+                    className={`px-3 py-2 rounded-xl text-xs font-semibold border transition-all cursor-pointer ${
+                      selectedAboutProject === proj.number
+                        ? 'bg-[#D4AF37] text-neutral-950 border-[#D4AF37] shadow'
+                        : 'bg-[#121622] text-neutral-300 border-neutral-800 hover:text-white'
+                    }`}
+                  >
+                    Project {proj.number}: {proj.title}
+                  </button>
+                ))}
+              </div>
+
+              {/* Detailed Project Cards */}
+              <div className="space-y-8">
+                {ILM_JUNIOR_PROJECTS.filter(
+                  (p) =>
+                    selectedAboutProject === 'ALL' ||
+                    p.number === selectedAboutProject
+                ).map((proj) => (
+                  <div
+                    key={proj.number}
+                    className="p-6 sm:p-8 rounded-2xl bg-[#111520] border border-[#D4AF37]/35 space-y-6 shadow-xl"
+                  >
+                    <div className="flex flex-wrap items-center justify-between gap-3 border-b border-neutral-800 pb-4">
+                      <div>
+                        <div className="text-xs font-bold uppercase tracking-widest text-[#F3D068]">
+                          Junior ILM · Project {proj.number}
+                        </div>
+                        <h3 className="font-display text-xl sm:text-2xl font-bold text-white mt-1">
+                          Project {proj.number}: {proj.title}
+                        </h3>
+                      </div>
+                      <span className="px-3.5 py-1.5 rounded-xl bg-[#D4AF37]/20 border border-[#D4AF37]/50 text-xs font-mono-tabular font-bold text-[#F3D068]">
+                        Time Guideline: {proj.timeGuideline}
+                      </span>
+                    </div>
+
+                    {proj.purpose && (
+                      <div className="p-4 rounded-xl bg-[#0B0E16] border border-neutral-800">
+                        <div className="text-xs font-bold uppercase tracking-wider text-[#F3D068] mb-1">
+                          Purpose
+                        </div>
+                        <p className="text-xs sm:text-sm text-neutral-200 leading-relaxed">
+                          {proj.purpose}
+                        </p>
+                      </div>
+                    )}
+
+                    {/* Objectives */}
+                    <div>
+                      <h4 className="font-display text-sm font-bold text-[#F3D068] uppercase tracking-wider mb-2.5">
+                        Objectives
+                      </h4>
+                      <ul className="space-y-1.5 text-xs sm:text-sm text-neutral-200 list-disc list-inside">
+                        {proj.objectives.map((obj, idx) => (
+                          <li key={idx} className="leading-relaxed">
+                            {obj}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+
+                    {/* Guidelines */}
+                    <div className="space-y-4">
+                      <h4 className="font-display text-sm font-bold text-[#F3D068] uppercase tracking-wider">
+                        Guidelines
+                      </h4>
+                      {proj.guidelinesIntro && (
+                        <p className="text-xs sm:text-sm text-neutral-300 leading-relaxed">
+                          {proj.guidelinesIntro}
+                        </p>
+                      )}
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        {proj.guidelineSections.map((sec, sIdx) => (
+                          <div
+                            key={sIdx}
+                            className="p-4 rounded-xl bg-[#0C0F17] border border-neutral-800/90 space-y-2"
+                          >
+                            <div className="font-display font-bold text-sm text-white">
+                              {sec.heading}
+                            </div>
+                            <ul className="space-y-1.5 text-xs text-neutral-300 list-disc list-inside">
+                              {sec.items.map((item, iIdx) => (
+                                <li key={iIdx} className="leading-relaxed">
+                                  {item}
+                                  {sec.subItems && sec.subItems[iIdx] && (
+                                    <ul className="pl-5 mt-1 space-y-1 list-circle text-neutral-400">
+                                      {sec.subItems[iIdx].map((sub, subIdx) => (
+                                        <li key={subIdx}>{sub}</li>
+                                      ))}
+                                    </ul>
+                                  )}
+                                </li>
+                              ))}
+                            </ul>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Preparation Tips & Success Indicators */}
+                    {(proj.preparationTips || proj.successIndicators) && (
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        {proj.preparationTips && (
+                          <div className="p-4 rounded-xl bg-[#0C0F17] border border-neutral-800 space-y-2">
+                            <div className="font-display font-bold text-xs uppercase tracking-wider text-emerald-300">
+                              Preparation Tips
+                            </div>
+                            <ul className="space-y-1.5 text-xs text-neutral-300 list-disc list-inside">
+                              {proj.preparationTips.map((tip, idx) => (
+                                <li key={idx}>{tip}</li>
+                              ))}
+                            </ul>
+                          </div>
+                        )}
+                        {proj.successIndicators && (
+                          <div className="p-4 rounded-xl bg-[#0C0F17] border border-neutral-800 space-y-2">
+                            <div className="font-display font-bold text-xs uppercase tracking-wider text-[#F3D068]">
+                              Indicators of Success
+                            </div>
+                            <ul className="space-y-1.5 text-xs text-neutral-300 list-disc list-inside">
+                              {proj.successIndicators.map((ind, idx) => (
+                                <li key={idx}>{ind}</li>
+                              ))}
+                            </ul>
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Evaluation Criteria & After Completing */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div className="p-4 rounded-xl bg-[#0C0F17] border border-neutral-800 space-y-2">
+                        <div className="font-display font-bold text-xs uppercase tracking-wider text-[#F3D068]">
+                          Evaluation Criteria
+                        </div>
+                        <ul className="space-y-1.5 text-xs text-neutral-300 list-disc list-inside">
+                          {proj.evaluationCriteria.map((crit, idx) => (
+                            <li key={idx}>{crit}</li>
+                          ))}
+                        </ul>
+                      </div>
+
+                      <div className="p-4 rounded-xl bg-[#0C0F17] border border-neutral-800 space-y-2">
+                        <div className="font-display font-bold text-xs uppercase tracking-wider text-emerald-300">
+                          After Completing This Project
+                        </div>
+                        <ul className="space-y-1.5 text-xs text-neutral-300 list-disc list-inside">
+                          {proj.afterCompleting.map((ac, idx) => (
+                            <li key={idx}>{ac}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    </div>
+
+                    {/* Summary Quote */}
+                    <blockquote className="p-4 rounded-xl bg-gradient-to-r from-[#D4AF37]/15 via-[#141824] to-[#0E1118] border-l-4 border-[#D4AF37] text-xs sm:text-sm text-neutral-200 italic leading-relaxed">
+                      “{proj.summaryQuote}”
+                    </blockquote>
+
+                    {proj.closingNote && (
+                      <div className="p-4 rounded-xl bg-emerald-950/30 border border-emerald-700/40 text-xs sm:text-sm text-emerald-200 font-medium leading-relaxed">
+                        {proj.closingNote}
+                      </div>
+                    )}
+                  </div>
+                ))}
               </div>
             </div>
 
@@ -2099,6 +2350,7 @@ export const PublicWebsite: React.FC<PublicWebsiteProps> = ({
             <PosterStageCard
               poster={inspectedPoster}
               liveParticipants={data.participants}
+              canManage={canManageClass(inspectedPoster.classCode)}
               onOpenStudio={(p) => {
                 setInspectedPoster(null);
                 setStudioPoster(p);
@@ -2126,7 +2378,7 @@ export const PublicWebsite: React.FC<PublicWebsiteProps> = ({
           ) => {
             await fetch(`/api/public/posters/${posterId}`, {
               method: 'PATCH',
-              headers: { 'Content-Type': 'application/json' },
+              headers: getClientAuthHeaders(),
               body: JSON.stringify({
                 posterImageUrl: updatedDataUrl,
                 title,
@@ -2140,12 +2392,13 @@ export const PublicWebsite: React.FC<PublicWebsiteProps> = ({
           onPostToFeed={async (poster, renderedDataUrl, caption) => {
             await fetch(`/api/public/posters/${poster.id}/share-to-feed`, {
               method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
+              headers: getClientAuthHeaders(),
               body: JSON.stringify({
                 title: `Class ${poster.classCode} Official Competition Poster`,
                 caption,
                 mediaUrl: renderedDataUrl,
-                submittedByName: `Class ${poster.classCode} Poster Studio`,
+                submittedByName:
+                  currentAdmin?.name || `Class ${poster.classCode} Poster Studio`,
               }),
             });
             if (onRefreshData) onRefreshData();
@@ -2200,18 +2453,20 @@ export const PublicWebsite: React.FC<PublicWebsiteProps> = ({
                   )}
                 </button>
 
-                <button
-                  type="button"
-                  onClick={() => {
-                    const postToEdit = inspectedFeedPost;
-                    setInspectedFeedPost(null);
-                    handleEditFeedPostInStudio(postToEdit);
-                  }}
-                  className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg bg-gradient-to-r from-[#C89D2E] via-[#E8C55B] to-[#C89D2E] text-neutral-950 font-bold text-xs cursor-pointer"
-                >
-                  <Sliders className="w-3.5 h-3.5" />
-                  <span>Edit in Photoshop</span>
-                </button>
+                {canManageClass(inspectedFeedPost.classCode) && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const postToEdit = inspectedFeedPost;
+                      setInspectedFeedPost(null);
+                      handleEditFeedPostInStudio(postToEdit);
+                    }}
+                    className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg bg-gradient-to-r from-[#C89D2E] via-[#E8C55B] to-[#C89D2E] text-neutral-950 font-bold text-xs cursor-pointer"
+                  >
+                    <Sliders className="w-3.5 h-3.5" />
+                    <span>Edit in Photoshop</span>
+                  </button>
+                )}
 
                 <button
                   type="button"
@@ -2518,6 +2773,7 @@ export const PublicWebsite: React.FC<PublicWebsiteProps> = ({
             { id: 'home', label: 'Home', icon: Home },
             { id: 'classes', label: 'Classes', icon: GraduationCap },
             { id: 'posters', label: 'Posters', icon: ImageIcon },
+            { id: 'feed', label: 'Feed', icon: Sparkles },
             { id: 'results', label: 'Results', icon: Trophy },
             { id: 'library', label: 'Library', icon: BookOpen },
           ] as const

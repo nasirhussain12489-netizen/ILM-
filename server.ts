@@ -42,6 +42,7 @@ import {
   AuthRequest,
   canAccessClass,
   requireAuth,
+  requireGlobalControl,
   requireSuperAdmin,
 } from './src/middleware/auth.ts';
 
@@ -407,7 +408,7 @@ app.get(
         .from(weeklyResults)
         .orderBy(desc(weeklyResults.resultDate), desc(weeklyResults.id));
 
-      if (admin.role === 'SUPER_ADMIN') {
+      if (admin.role === 'SUPER_ADMIN' || admin.role === 'TEACHER') {
         const [
           allClasses,
           allStudents,
@@ -442,7 +443,9 @@ app.get(
             .select()
             .from(libraryResources)
             .orderBy(desc(libraryResources.createdAt)),
-          db.select().from(users).orderBy(asc(users.role), asc(users.assignedClass)),
+          admin.role === 'SUPER_ADMIN'
+            ? db.select().from(users).orderBy(asc(users.role), asc(users.assignedClass))
+            : Promise.resolve([]),
           db
             .select()
             .from(activityLogs)
@@ -467,18 +470,21 @@ app.get(
           feedPosts: allFeed,
           weeklyResults: allResults,
           libraryResources: allLibrary,
-          users: allUsers.map((u) => ({
-            id: u.id,
-            uid: u.uid,
-            email: u.email,
-            name: u.name,
-            role: u.role,
-            assignedClass: u.assignedClass,
-            status: u.status,
-            passwordPlain: u.passwordPlain || '',
-            createdAt: u.createdAt,
-            updatedAt: u.updatedAt,
-          })),
+          users:
+            admin.role === 'SUPER_ADMIN'
+              ? allUsers.map((u) => ({
+                  id: u.id,
+                  uid: u.uid,
+                  email: u.email,
+                  name: u.name,
+                  role: u.role,
+                  assignedClass: u.assignedClass,
+                  status: u.status,
+                  passwordPlain: u.passwordPlain || '',
+                  createdAt: u.createdAt,
+                  updatedAt: u.updatedAt,
+                }))
+              : [],
           activityLogs: allLogs,
           settings: settingsMap,
         });
@@ -1239,10 +1245,13 @@ app.patch(
   }
 );
 
-// Public & Studio endpoints for uploading a pre-made poster, saving an edited poster, resetting to auto SVG, and sharing to Feed
-app.post('/api/public/upload-poster', async (req: Request, res: Response) => {
-  try {
-    const { fileName, base64Data } = req.body || {};
+// Studio endpoints for uploading a pre-made poster, saving an edited poster, resetting to auto SVG, and sharing to Feed (Restricted to Super Admin, Teacher, and Class Admin)
+app.post(
+  '/api/public/upload-poster',
+  requireAuth,
+  async (req: AuthRequest, res: Response) => {
+    try {
+      const { fileName, base64Data } = req.body || {};
     if (!fileName || !base64Data) {
       return res
         .status(400)
@@ -1293,17 +1302,26 @@ app.post('/api/public/upload-poster', async (req: Request, res: Response) => {
   }
 });
 
-app.patch('/api/public/posters/:id', async (req: Request, res: Response) => {
-  try {
-    const posterId = Number(req.params.id);
-    const existingRows = await db
-      .select()
-      .from(posters)
-      .where(eq(posters.id, posterId));
-    if (existingRows.length === 0) {
-      return res.status(404).json({ error: 'Poster not found.' });
-    }
-    const existing = existingRows[0];
+app.patch(
+  '/api/public/posters/:id',
+  requireAuth,
+  async (req: AuthRequest, res: Response) => {
+    try {
+      const admin = req.adminUser!;
+      const posterId = Number(req.params.id);
+      const existingRows = await db
+        .select()
+        .from(posters)
+        .where(eq(posters.id, posterId));
+      if (existingRows.length === 0) {
+        return res.status(404).json({ error: 'Poster not found.' });
+      }
+      const existing = existingRows[0];
+      if (!canAccessClass(admin, existing.classCode)) {
+        return res.status(403).json({
+          error: `Forbidden: You do not have permission to edit Class ${existing.classCode} posters.`,
+        });
+      }
 
     const {
       title,
@@ -1363,13 +1381,13 @@ app.patch('/api/public/posters/:id', async (req: Request, res: Response) => {
       .returning();
 
     await logActivity({
-      actorEmail: 'studio@ilm.edu',
-      actorRole: 'POSTER_STUDIO',
+      actorEmail: admin.email,
+      actorRole: admin.role,
       action: 'SAVE_CUSTOM_OR_EDITED_POSTER',
       targetType: 'POSTER',
       targetId: String(posterId),
       classCode: existing.classCode,
-      details: `Saved edited/uploaded poster for Class ${existing.classCode}.`,
+      details: `${admin.name} saved edited/uploaded poster for Class ${existing.classCode}.`,
     });
 
     return res.json({ poster: updated[0] });
@@ -1382,8 +1400,10 @@ app.patch('/api/public/posters/:id', async (req: Request, res: Response) => {
 
 app.post(
   '/api/public/posters/:id/share-to-feed',
-  async (req: Request, res: Response) => {
+  requireAuth,
+  async (req: AuthRequest, res: Response) => {
     try {
+      const admin = req.adminUser!;
       const posterId = Number(req.params.id);
       const existingRows = await db
         .select()
@@ -1393,6 +1413,11 @@ app.post(
         return res.status(404).json({ error: 'Poster not found.' });
       }
       const poster = existingRows[0];
+      if (!canAccessClass(admin, poster.classCode)) {
+        return res.status(403).json({
+          error: `Forbidden: You do not have permission to share Class ${poster.classCode} posters to the feed.`,
+        });
+      }
       const { title, caption, mediaUrl, submittedByName } = req.body || {};
 
       let finalMediaUrl = mediaUrl
@@ -1435,23 +1460,23 @@ app.post(
           mediaUrl: finalMediaUrl,
           mediaType: 'POSTER',
           status: 'APPROVED',
-          submittedByEmail: 'studio@ilm.edu',
+          submittedByEmail: admin.email,
           submittedByName: String(
-            submittedByName || `Class ${poster.classCode} Poster Studio`
+            submittedByName || admin.name || `Class ${poster.classCode} Poster Studio`
           ).trim(),
-          reviewedByEmail: 'nasirhussain12489@gmail.com',
+          reviewedByEmail: admin.email,
           reviewedAt: new Date(),
         })
         .returning();
 
       await logActivity({
-        actorEmail: 'studio@ilm.edu',
-        actorRole: 'POSTER_STUDIO',
+        actorEmail: admin.email,
+        actorRole: admin.role,
         action: 'SHARE_POSTER_TO_FEED',
         targetType: 'FEED_POST',
         targetId: String(inserted[0].id),
         classCode: poster.classCode,
-        details: `Shared Class ${poster.classCode} poster "${inserted[0].title}" to the public Feed.`,
+        details: `${admin.name} shared Class ${poster.classCode} poster "${inserted[0].title}" to the public Feed.`,
       });
 
       return res.status(201).json({ post: inserted[0] });
@@ -1512,8 +1537,14 @@ app.post(
           status: initialStatus,
           submittedByEmail: admin.email,
           submittedByName: admin.name,
-          reviewedByEmail: admin.role === 'SUPER_ADMIN' ? admin.email : null,
-          reviewedAt: admin.role === 'SUPER_ADMIN' ? new Date() : null,
+          reviewedByEmail:
+            admin.role === 'SUPER_ADMIN' || admin.role === 'TEACHER'
+              ? admin.email
+              : null,
+          reviewedAt:
+            admin.role === 'SUPER_ADMIN' || admin.role === 'TEACHER'
+              ? new Date()
+              : null,
         })
         .returning();
 
@@ -1605,7 +1636,7 @@ app.put(
 app.post(
   '/api/admin/feed/:id/moderate',
   requireAuth,
-  requireSuperAdmin,
+  requireGlobalControl,
   async (req: AuthRequest, res: Response) => {
     try {
       const admin = req.adminUser!;
@@ -1705,12 +1736,12 @@ app.delete(
 );
 
 // ============================================================================
-// 7. WEEKLY OFFICIAL RESULTS ENDPOINTS (SUPER ADMIN ONLY)
+// 7. WEEKLY OFFICIAL RESULTS ENDPOINTS (SUPER ADMIN & TEACHER)
 // ============================================================================
 app.post(
   '/api/admin/results',
   requireAuth,
-  requireSuperAdmin,
+  requireGlobalControl,
   async (req: AuthRequest, res: Response) => {
     try {
       const admin = req.adminUser!;
@@ -1781,7 +1812,7 @@ app.post(
 app.put(
   '/api/admin/results/:id',
   requireAuth,
-  requireSuperAdmin,
+  requireGlobalControl,
   async (req: AuthRequest, res: Response) => {
     try {
       const admin = req.adminUser!;
@@ -1850,7 +1881,7 @@ app.put(
 app.delete(
   '/api/admin/results/:id',
   requireAuth,
-  requireSuperAdmin,
+  requireGlobalControl,
   async (req: AuthRequest, res: Response) => {
     try {
       const admin = req.adminUser!;
@@ -2046,10 +2077,14 @@ app.post(
           .status(400)
           .json({ error: 'Administrator name, email, and role are required.' });
       }
-      if (role !== 'SUPER_ADMIN' && role !== 'CLASS_ADMIN') {
-        return res
-          .status(400)
-          .json({ error: "Role must be 'SUPER_ADMIN' or 'CLASS_ADMIN'." });
+      if (
+        role !== 'SUPER_ADMIN' &&
+        role !== 'TEACHER' &&
+        role !== 'CLASS_ADMIN'
+      ) {
+        return res.status(400).json({
+          error: "Role must be 'SUPER_ADMIN', 'TEACHER', or 'CLASS_ADMIN'.",
+        });
       }
 
       const normalizedEmail = String(email).trim().toLowerCase();
@@ -2194,7 +2229,7 @@ app.patch(
       const nextRole = role ?? existing.role;
       const nextStatus = status ?? existing.status;
       const nextClass =
-        nextRole === 'SUPER_ADMIN'
+        nextRole === 'SUPER_ADMIN' || nextRole === 'TEACHER'
           ? null
           : assignedClass !== undefined
           ? assignedClass
@@ -2360,7 +2395,7 @@ app.delete(
 app.put(
   '/api/admin/settings',
   requireAuth,
-  requireSuperAdmin,
+  requireGlobalControl,
   async (req: AuthRequest, res: Response) => {
     try {
       const superAdmin = req.adminUser!;

@@ -173,6 +173,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   onPublicDataChanged,
 }) => {
   const isSuperAdmin = currentUser.role === 'SUPER_ADMIN';
+  const isTeacher = currentUser.role === 'TEACHER';
+  const hasGlobalControl = isSuperAdmin || isTeacher;
   const lockedClass = currentUser.assignedClass as ClassCode | null;
 
   const [activeSection, setActiveSection] = useState<AdminSection>('overview');
@@ -204,7 +206,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   // Filter states
   const [selectedClassFilter, setSelectedClassFilter] = useState<
     'ALL' | ClassCode
-  >(isSuperAdmin ? 'ALL' : lockedClass || 'U1');
+  >(hasGlobalControl ? 'ALL' : lockedClass || 'U1');
   const [selectedCategoryFilter, setSelectedCategoryFilter] = useState<
     'ALL' | CompetitionCategoryName
   >('ALL');
@@ -278,7 +280,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const [lAuthor, setLAuthor] = useState(currentUser.name);
   const [lCategory, setLCategory] = useState<LibraryCategoryName>('Books');
   const [lScope, setLScope] = useState<'COMMON' | ClassCode>(
-    isSuperAdmin ? 'COMMON' : lockedClass || 'U2'
+    hasGlobalControl ? 'COMMON' : lockedClass || 'U2'
   );
   const [lDescription, setLDescription] = useState('');
   const [lFileUrl, setLFileUrl] = useState('');
@@ -289,7 +291,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   // Admin User Management Form State (Super Admin only)
   const [uName, setUName] = useState('');
   const [uEmail, setUEmail] = useState('');
-  const [uRole, setURole] = useState<'SUPER_ADMIN' | 'CLASS_ADMIN'>(
+  const [uRole, setURole] = useState<'SUPER_ADMIN' | 'TEACHER' | 'CLASS_ADMIN'>(
     'CLASS_ADMIN'
   );
   const [uAssignedClass, setUAssignedClass] = useState<ClassCode>('U1');
@@ -300,7 +302,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const [editUserEmail, setEditUserEmail] = useState('');
   const [editUserPassword, setEditUserPassword] = useState('');
   const [editUserRole, setEditUserRole] = useState<
-    'SUPER_ADMIN' | 'CLASS_ADMIN'
+    'SUPER_ADMIN' | 'TEACHER' | 'CLASS_ADMIN'
   >('CLASS_ADMIN');
   const [editUserClass, setEditUserClass] = useState<ClassCode>('U1');
 
@@ -368,7 +370,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
   // Auto-populate Class Teacher / Class Officer form fields with current holder's name & photo when class or role changes
   useEffect(() => {
-    const targetClass = isSuperAdmin ? offClass : lockedClass || offClass;
+    const targetClass = hasGlobalControl ? offClass : lockedClass || offClass;
     const found = classOfficersList.find(
       (o) =>
         o.classCode === targetClass &&
@@ -385,7 +387,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       setOffPhotoUrl(STUDIO_PORTRAIT_PRESETS[0].url);
       setOffResponsibilities('');
     }
-  }, [offClass, offRole, classOfficersList, isSuperAdmin, lockedClass]);
+  }, [offClass, offRole, classOfficersList, hasGlobalControl, lockedClass]);
 
   // Helper to upload file to /api/admin/upload
   const handleFileUpload = async (
@@ -441,7 +443,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     setActionBusy(true);
     setBanner(null);
     try {
-      const targetClass = isSuperAdmin ? pClass : lockedClass!;
+      const targetClass = hasGlobalControl ? pClass : lockedClass!;
       const endpoint = editingParticipant
         ? `/api/admin/participants/${editingParticipant.id}`
         : '/api/admin/participants';
@@ -618,7 +620,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     setActionBusy(true);
     setBanner(null);
     try {
-      const targetClass = isSuperAdmin ? fClass : lockedClass!;
+      const targetClass = hasGlobalControl ? fClass : lockedClass!;
       const endpoint = editingFeedPost
         ? `/api/admin/feed/${editingFeedPost.id}`
         : '/api/admin/feed';
@@ -645,7 +647,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       setEditingFeedPost(null);
       setBanner({
         type: 'success',
-        text: isSuperAdmin
+        text: hasGlobalControl
           ? `Published feed post "${data.post.title}" for Class ${targetClass}.`
           : `Submitted "${data.post.title}" to the Super Admin for approval (Status: PENDING).`,
       });
@@ -748,7 +750,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     setActionBusy(true);
     setBanner(null);
     try {
-      const effectiveScope = isSuperAdmin
+      const effectiveScope = hasGlobalControl
         ? forcedScope || lScope
         : lockedClass!;
 
@@ -850,7 +852,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       newPassword?: string;
       status?: 'ACTIVE' | 'DEACTIVATED';
       assignedClass?: ClassCode | null;
-      role?: 'SUPER_ADMIN' | 'CLASS_ADMIN';
+      role?: 'SUPER_ADMIN' | 'TEACHER' | 'CLASS_ADMIN';
       replaceExistingClassAdmin?: boolean;
     }
   ) => {
@@ -924,7 +926,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     setActionBusy(true);
     setBanner(null);
     try {
-      const targetClass = isSuperAdmin ? stClass : lockedClass!;
+      const targetClass = hasGlobalControl ? stClass : lockedClass!;
       const endpoint = editingStudent
         ? `/api/admin/students/${editingStudent.id}`
         : '/api/admin/students';
@@ -973,7 +975,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     setActionBusy(true);
     setBanner(null);
     try {
-      const targetClass = isSuperAdmin ? offClass : lockedClass!;
+      const targetClass = hasGlobalControl ? offClass : lockedClass!;
       const res = await fetch('/api/admin/class-officers', {
         method: 'POST',
         headers: authHeaders(),
@@ -1096,7 +1098,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       }
       setBanner({
         type: 'success',
-        text: isSuperAdmin
+        text: hasGlobalControl
           ? `Published Class ${poster.classCode} Poster directly to the public Feed!`
           : `Submitted Class ${poster.classCode} Poster to the Feed for Super Admin approval!`,
       });
@@ -1112,13 +1114,13 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     }
   };
 
-  // Navigation items for Super Admin vs Class Admin (Matching Screenshot 2026-10-12 123532.png sidebar!)
+  // Navigation items for Super Admin / Teacher vs Class Admin
   const sidebarItems: Array<{
     id: AdminSection;
     label: string;
     icon: React.FC<{ className?: string }>;
     badge?: number;
-  }> = isSuperAdmin
+  }> = hasGlobalControl
     ? [
         { id: 'overview', label: 'Home', icon: Home },
         { id: 'classes', label: 'Classes (U1–U6)', icon: GraduationCap },
@@ -1136,7 +1138,9 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         { id: 'common-library', label: 'Library', icon: BookOpen },
         { id: 'class-libraries', label: 'Class Libraries', icon: FileText },
         { id: 'categories', label: 'Categories & Limits', icon: FolderKanban },
-        { id: 'users', label: 'Users', icon: Users },
+        ...(isSuperAdmin
+          ? [{ id: 'users' as AdminSection, label: 'Users', icon: Users }]
+          : []),
         { id: 'logs', label: 'Activity Logs', icon: Activity },
         { id: 'settings', label: 'Settings', icon: Settings },
       ]
@@ -1199,7 +1203,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   ).length;
 
   // Capacity check for the currently selected class & category in the Add Participant form
-  const formTargetClass = isSuperAdmin ? pClass : lockedClass!;
+  const formTargetClass = hasGlobalControl ? pClass : lockedClass!;
   const currentCategoryRegisteredCount = participantsList.filter(
     (p) =>
       p.classCode === formTargetClass &&
@@ -1211,20 +1215,22 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     currentCategoryRegisteredCount >= currentCategoryLimit;
 
   return (
-    <div className="min-h-screen flex bg-[#07080C] text-neutral-100">
+    <div className="h-screen max-h-screen w-full flex overflow-hidden bg-[#07080C] text-neutral-100">
       {/* =====================================================================
-          SIDEBAR NAVIGATION (260px Desktop)
+          SIDEBAR NAVIGATION (Fixed / Independent Left Scrolling)
          ===================================================================== */}
-      <aside className="hidden lg:flex w-64 shrink-0 flex-col justify-between bg-[#0B0D14] border-r border-neutral-800/90 p-5">
-        <div>
-          <div className="pb-5 mb-5 border-b border-neutral-800 flex items-center justify-between">
+      <aside className="hidden lg:flex w-64 shrink-0 flex-col justify-between bg-[#0B0D14] border-r border-neutral-800/90 p-5 h-full max-h-screen overflow-hidden select-none">
+        <div className="flex-1 min-h-0 flex flex-col">
+          <div className="pb-4 mb-3 border-b border-neutral-800 flex items-center justify-between shrink-0">
             <IlmLogo size="sm" showSubtitle />
           </div>
 
-          <div className="mb-4 px-3 py-2 rounded-lg bg-[#121622] border border-[#D4AF37]/30">
+          <div className="mb-3 px-3 py-2 rounded-lg bg-[#121622] border border-[#D4AF37]/30 shrink-0">
             <div className="text-[11px] font-semibold uppercase tracking-wider text-[#F3D068]">
               {isSuperAdmin
                 ? 'Global Super Admin'
+                : isTeacher
+                ? 'Faculty Teacher (Full Control)'
                 : `Class ${lockedClass} Administrator`}
             </div>
             <div className="text-xs text-white font-medium truncate mt-0.5">
@@ -1235,7 +1241,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             </div>
           </div>
 
-          <nav className="space-y-1">
+          {/* Navigation links - Independent scroll container for sidebar */}
+          <nav className="flex-1 min-h-0 overflow-y-auto space-y-1 pr-1 overscroll-contain">
             {sidebarItems.map((item) => {
               const Icon = item.icon;
               const isActive = activeSection === item.id;
@@ -1265,11 +1272,11 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           </nav>
         </div>
 
-        <div className="pt-4 border-t border-neutral-800 space-y-2">
+        <div className="pt-3 mt-2 border-t border-neutral-800 space-y-2 shrink-0">
           <button
             type="button"
             onClick={onSwitchToPublic}
-            className="w-full flex items-center gap-2 px-3.5 py-2 rounded-lg bg-[#141824] hover:bg-[#1B2030] text-xs font-medium text-neutral-200 border border-neutral-700 cursor-pointer"
+            className="w-full flex items-center gap-2 px-3.5 py-2 rounded-lg bg-[#141824] hover:bg-[#1B2030] text-xs font-medium text-neutral-200 border border-neutral-700 cursor-pointer transition-colors"
           >
             <Globe className="w-4 h-4 text-[#D4AF37]" />
             <span>Public Website View</span>
@@ -1277,7 +1284,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           <button
             type="button"
             onClick={onLogout}
-            className="w-full flex items-center gap-2 px-3.5 py-2 rounded-lg bg-red-950/30 hover:bg-red-950/60 text-xs font-medium text-red-300 border border-red-900/50 cursor-pointer"
+            className="w-full flex items-center gap-2 px-3.5 py-2 rounded-lg bg-red-950/30 hover:bg-red-950/60 text-xs font-medium text-red-300 border border-red-900/50 cursor-pointer transition-colors"
           >
             <LogOut className="w-4 h-4" />
             <span>Sign Out</span>
@@ -1286,15 +1293,17 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       </aside>
 
       {/* =====================================================================
-          MAIN WORKSPACE CANVAS
+          MAIN WORKSPACE CANVAS (Independent Right Pane Scrolling)
          ===================================================================== */}
-      <div className="flex-1 flex flex-col min-w-0">
-        {/* Top Bar Contract for Admin Workspace */}
-        <header className="sticky top-0 z-20 bg-[#0B0D14]/95 backdrop-blur-md border-b border-neutral-800 px-6 py-4 flex flex-wrap items-center justify-between gap-4">
+      <div className="flex-1 flex flex-col min-w-0 h-full max-h-screen overflow-hidden">
+        {/* Top Bar Contract for Admin Workspace - Fixed header */}
+        <header className="shrink-0 z-20 bg-[#0B0D14]/95 backdrop-blur-md border-b border-neutral-800 px-6 py-4 flex flex-wrap items-center justify-between gap-4">
           <div className="flex items-center gap-3">
             <span className="text-xs text-neutral-400">
               {isSuperAdmin
                 ? 'ILM Global Administration'
+                : isTeacher
+                ? 'ILM Faculty Teacher Global Control'
                 : `Class ${lockedClass} Isolated Administration`}
             </span>
             <span className="text-neutral-600" aria-hidden="true">
@@ -1306,7 +1315,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           </div>
 
           <div className="flex items-center gap-3">
-            {!isSuperAdmin && lockedClass && (
+            {!hasGlobalControl && lockedClass && (
               <span className="text-xs font-semibold text-[#F3D068] tracking-wider uppercase">
                 Assigned Class: {lockedClass} Only
               </span>
@@ -1329,7 +1338,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         </header>
 
         {/* Mobile Section Switcher */}
-        <div className="lg:hidden bg-[#0E1118] border-b border-neutral-800 px-4 py-2.5 flex items-center gap-2 overflow-x-auto">
+        <div className="lg:hidden shrink-0 bg-[#0E1118] border-b border-neutral-800 px-4 py-2.5 flex items-center gap-2 overflow-x-auto">
           {sidebarItems.map((item) => (
             <button
               key={item.id}
@@ -1346,28 +1355,30 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           ))}
         </div>
 
-        {/* Status Notification Banner */}
-        {banner && (
-          <div
-            className={`mx-6 mt-5 p-4 rounded-xl border flex items-center justify-between gap-4 text-xs sm:text-sm ${
-              banner.type === 'success'
-                ? 'bg-emerald-950/50 border-emerald-700/60 text-emerald-200'
-                : 'bg-red-950/50 border-red-700/60 text-red-200'
-            }`}
-          >
-            <span>{banner.text}</span>
-            <button
-              type="button"
-              onClick={() => setBanner(null)}
-              className="p-1 rounded hover:bg-black/30 cursor-pointer"
+        {/* Right Side Independent Scroll Viewport */}
+        <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain">
+          {/* Status Notification Banner */}
+          {banner && (
+            <div
+              className={`mx-6 mt-5 p-4 rounded-xl border flex items-center justify-between gap-4 text-xs sm:text-sm ${
+                banner.type === 'success'
+                  ? 'bg-emerald-950/50 border-emerald-700/60 text-emerald-200'
+                  : 'bg-red-950/50 border-red-700/60 text-red-200'
+              }`}
             >
-              <X className="w-4 h-4" />
-            </button>
-          </div>
-        )}
+              <span>{banner.text}</span>
+              <button
+                type="button"
+                onClick={() => setBanner(null)}
+                className="p-1 rounded hover:bg-black/30 cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+          )}
 
-        {/* Main Section Content */}
-        <main className="p-6 sm:p-8 space-y-8 flex-1">
+          {/* Main Section Content */}
+          <main className="p-6 sm:p-8 space-y-8">
           {loading ? (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
               {[1, 2, 3, 4].map((n) => (
@@ -1384,20 +1395,22 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                  =============================================================== */}
               {activeSection === 'overview' && (
                 <div className="space-y-8">
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                  <div className="sticky top-0 z-30 -mt-2 py-3 px-4 -mx-4 sm:-mx-8 sm:px-8 bg-[#07080C]/95 backdrop-blur-md border-b border-neutral-800/90 flex flex-col sm:flex-row sm:items-center justify-between gap-4 shadow-lg">
                     <div>
                       <h1 className="font-display text-2xl sm:text-3xl font-bold text-white">
                         {isSuperAdmin
                           ? 'Super Admin Global Home & Live Stage'
+                          : isTeacher
+                          ? 'Teacher Global Home & Live Stage (All Classes U1–U6)'
                           : `Class ${lockedClass} Home Page & Competition Stage`}
                       </h1>
-                      <p className="text-sm text-neutral-400 mt-1">
-                        {isSuperAdmin
-                          ? 'Live stage showcase (Qirat → Naat → Speech → Table Topic), competition alarm timer, class participant cards, and automatic master class posters.'
-                          : `Official Class ${lockedClass} Home Page featuring your live stage program (Qirat → Naat → Speech → Table Topic), competition alarm timer, participant photo cards, and unified Class ${lockedClass} poster.`}
+                      <p className="text-xs sm:text-sm text-neutral-400 mt-0.5">
+                        {hasGlobalControl
+                          ? 'Live stage showcase (Qirat → Naat → Speech → Table Topic), competition alarm timer, participant cards, and master class posters.'
+                          : `Official Class ${lockedClass} Home Page: live stage program, alarm timer, participant cards, and unified master poster.`}
                       </p>
                     </div>
-                    <div className="flex flex-wrap items-center gap-2.5">
+                    <div className="flex flex-wrap items-center gap-2.5 shrink-0">
                       <button
                         type="button"
                         onClick={() => {
@@ -1408,10 +1421,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                           setPDescription('');
                           setShowAddParticipantModal(true);
                         }}
-                        className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-[#D4AF37] hover:bg-[#e3be42] text-neutral-950 font-semibold text-xs cursor-pointer shadow-lg"
+                        className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-gradient-to-r from-[#C89D2E] via-[#E8C55B] to-[#C89D2E] hover:brightness-110 text-neutral-950 font-bold text-xs cursor-pointer shadow-lg transition-transform active:scale-95"
                       >
                         <Plus className="w-4 h-4" />
-                        <span>Add Participant</span>
+                        <span>+ Add Participant</span>
                       </button>
                       <button
                         type="button"
@@ -1427,10 +1440,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   {/* LIVE STAGE SHOWCASE + COMPETITION ALARM TIMER (Ordered: 1. Qirat -> 2. Naat -> 3. Speech -> 4. Table Topic) */}
                   <CompetitionStageAndTimer
                     participants={participantsList}
-                    activeClassFilter={isSuperAdmin ? 'ALL' : lockedClass!}
-                    allowClassSwitch={isSuperAdmin}
+                    activeClassFilter={hasGlobalControl ? 'ALL' : lockedClass!}
+                    allowClassSwitch={hasGlobalControl}
                     title={
-                      isSuperAdmin
+                      hasGlobalControl
                         ? 'Class Live Stage Program & Competition Timer'
                         : `Class ${lockedClass} Live Stage & Competition Timer`
                     }
@@ -1444,7 +1457,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                           Class Home Page Participant Lineup
                         </span>
                         <h2 className="font-display text-xl font-bold text-white mt-0.5">
-                          {isSuperAdmin
+                          {hasGlobalControl
                             ? selectedClassFilter === 'ALL'
                               ? 'All Classes (U1–U6) Registered Participants & Roles'
                               : `Class ${selectedClassFilter} Registered Participants & Roles`
@@ -1453,7 +1466,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                       </div>
 
                       <div className="flex flex-wrap items-center gap-2">
-                        {isSuperAdmin && (
+                        {hasGlobalControl && (
                           <div className="flex items-center gap-1 bg-[#121622] p-1 rounded-xl border border-neutral-800">
                             <button
                               type="button"
@@ -1488,7 +1501,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
                       {participantsList
                         .filter((p) =>
-                          isSuperAdmin
+                          hasGlobalControl
                             ? selectedClassFilter === 'ALL' ||
                               p.classCode === selectedClassFilter
                             : p.classCode === lockedClass
@@ -1556,7 +1569,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                           Unified 1-Page Designer Class Poster
                         </span>
                         <h2 className="font-display text-xl font-bold text-white">
-                          {isSuperAdmin
+                          {hasGlobalControl
                             ? 'Official Class Competition Posters (All Categories Combined)'
                             : `Class ${lockedClass} Official Master Poster`}
                         </h2>
@@ -1568,7 +1581,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                         .filter(
                           (p) =>
                             p.categoryName === 'All Categories' &&
-                            (!isSuperAdmin ||
+                            (!hasGlobalControl ||
                               selectedClassFilter === 'ALL' ||
                               p.classCode === selectedClassFilter)
                         )
@@ -1577,6 +1590,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                             key={poster.id}
                             poster={poster}
                             liveParticipants={participantsList}
+                            canManage={true}
                             onRegenerate={() =>
                               handleRegeneratePoster(
                                 poster.classCode,
@@ -1587,6 +1601,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                             onPostToFeed={(target) =>
                               handlePostPosterToFeed(target)
                             }
+                            onPosterUpdated={() => {
+                              fetchDashboardData();
+                              onPublicDataChanged();
+                            }}
                           />
                         ))}
                     </div>
@@ -1596,13 +1614,13 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
                     <div className="p-5 rounded-xl bg-[#0E1118] border border-neutral-800">
                       <div className="text-xs text-neutral-400">
-                        {isSuperAdmin ? 'Supported Classes' : 'Assigned Cohort'}
+                        {hasGlobalControl ? 'Supported Classes' : 'Assigned Cohort'}
                       </div>
                       <div className="font-mono-tabular text-2xl sm:text-3xl font-bold text-[#F3D068] mt-1">
-                        {isSuperAdmin ? classesList.length : lockedClass}
+                        {hasGlobalControl ? classesList.length : lockedClass}
                       </div>
                       <div className="text-[11px] text-neutral-500 mt-1">
-                        {isSuperAdmin
+                        {hasGlobalControl
                           ? 'U1, U2, U3, U4, U5, U6 (No U7)'
                           : 'Strict Backend Isolation Active'}
                       </div>
@@ -1617,7 +1635,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                       </div>
                       <div className="text-[11px] text-neutral-500 mt-1 font-mono-tabular">
                         Capacity: {participantsList.length} /{' '}
-                        {isSuperAdmin
+                        {hasGlobalControl
                           ? TOTAL_CLASS_CAPACITY * 6
                           : TOTAL_CLASS_CAPACITY}{' '}
                         Places
@@ -1632,8 +1650,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                         {pendingFeedCount}
                       </div>
                       <div className="text-[11px] text-neutral-500 mt-1">
-                        {isSuperAdmin
-                          ? 'Awaiting Super Admin review'
+                        {hasGlobalControl
+                          ? 'Awaiting moderation review'
                           : 'Submitted for moderation'}
                       </div>
                     </div>
@@ -1732,27 +1750,27 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                         onClick={() => setActiveSection('feed')}
                         className="px-4 py-2.5 rounded-lg bg-[#151924] hover:bg-[#1C2130] text-white border border-neutral-700 text-xs font-medium cursor-pointer"
                       >
-                        {isSuperAdmin
+                        {hasGlobalControl
                           ? `Review Pending Feed (${pendingFeedCount})`
                           : 'Submit Class Feed Post'}
                       </button>
+                      {hasGlobalControl && (
+                        <button
+                          type="button"
+                          onClick={() => setActiveSection('results')}
+                          className="px-4 py-2.5 rounded-lg bg-[#151924] hover:bg-[#1C2130] text-[#F3D068] border border-[#D4AF37]/40 text-xs font-medium cursor-pointer"
+                        >
+                          Publish Weekly Result
+                        </button>
+                      )}
                       {isSuperAdmin && (
-                        <>
-                          <button
-                            type="button"
-                            onClick={() => setActiveSection('results')}
-                            className="px-4 py-2.5 rounded-lg bg-[#151924] hover:bg-[#1C2130] text-[#F3D068] border border-[#D4AF37]/40 text-xs font-medium cursor-pointer"
-                          >
-                            Publish Weekly Result
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => setActiveSection('users')}
-                            className="px-4 py-2.5 rounded-lg bg-[#151924] hover:bg-[#1C2130] text-white border border-neutral-700 text-xs font-medium cursor-pointer"
-                          >
-                            Manage Administrators
-                          </button>
-                        </>
+                        <button
+                          type="button"
+                          onClick={() => setActiveSection('users')}
+                          className="px-4 py-2.5 rounded-lg bg-[#151924] hover:bg-[#1C2130] text-white border border-neutral-700 text-xs font-medium cursor-pointer"
+                        >
+                          Manage Administrators
+                        </button>
                       )}
                     </div>
                   </div>
@@ -1761,12 +1779,12 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
                     <div className="lg:col-span-6 p-6 rounded-xl bg-[#0E1118] border border-neutral-800">
                       <h3 className="font-display text-base font-bold text-white mb-4">
-                        {isSuperAdmin
+                        {hasGlobalControl
                           ? 'Participants & Capacity by Class (U1–U6)'
                           : `Class ${lockedClass} Competition Occupancy`}
                       </h3>
                       <div className="space-y-3.5">
-                        {(isSuperAdmin ? VALID_CLASSES : [lockedClass!]).map(
+                        {(hasGlobalControl ? VALID_CLASSES : [lockedClass!]).map(
                           (cls) => {
                             const count = participantsList.filter(
                               (p) => p.classCode === cls
@@ -1830,9 +1848,9 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               )}
 
               {/* ===============================================================
-                  SECTION 2: CLASSES (U1–U6) GLOBAL MANAGEMENT (SUPER ADMIN)
+                  SECTION 2: CLASSES (U1–U6) GLOBAL MANAGEMENT (SUPER ADMIN & TEACHER)
                  =============================================================== */}
-              {activeSection === 'classes' && isSuperAdmin && (
+              {activeSection === 'classes' && hasGlobalControl && (
                 <div className="space-y-6">
                   <div>
                     <h1 className="font-display text-2xl font-bold text-white">
@@ -1935,17 +1953,33 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                  =============================================================== */}
               {activeSection === 'students' && (
                 <div className="space-y-8">
-                  <div>
-                    <h1 className="font-display text-2xl font-bold text-white">
-                      {isSuperAdmin
-                        ? 'Student Directory (Admission No, Name & Class U1–U6)'
-                        : `Class ${lockedClass} Student Roster`}
-                    </h1>
-                    <p className="text-sm text-neutral-400 mt-1">
-                      {isSuperAdmin
-                        ? 'Add or manage students across Classes U1–U6 with their Admission Number, Full Name, and Class assignment.'
-                        : `Add or manage students for Class ${lockedClass}. Every student added by you is automatically assigned to Class ${lockedClass}.`}
-                    </p>
+                  <div className="sticky top-0 z-30 -mt-2 py-3 px-4 -mx-4 sm:-mx-8 sm:px-8 bg-[#07080C]/95 backdrop-blur-md border-b border-neutral-800/90 flex flex-col sm:flex-row sm:items-center justify-between gap-4 shadow-lg">
+                    <div>
+                      <h1 className="font-display text-2xl font-bold text-white">
+                        {hasGlobalControl
+                          ? 'Student Directory (Admission No, Name & Class U1–U6)'
+                          : `Class ${lockedClass} Student Roster`}
+                      </h1>
+                      <p className="text-xs sm:text-sm text-neutral-400 mt-0.5">
+                        {hasGlobalControl
+                          ? 'Add or manage students across Classes U1–U6 with Admission Number, Full Name, and Class assignment.'
+                          : `Add or manage students for Class ${lockedClass}.`}
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setEditingStudent(null);
+                          setStAdmissionNo('');
+                          setStName('');
+                          window.scrollTo({ top: 0, behavior: 'smooth' });
+                        }}
+                        className="px-4 py-2 rounded-xl bg-gradient-to-r from-[#C89D2E] via-[#E8C55B] to-[#C89D2E] text-neutral-950 font-bold text-xs cursor-pointer shadow"
+                      >
+                        + Add Student / Candidate
+                      </button>
+                    </div>
                   </div>
 
                   {/* Add / Edit Student Form */}
@@ -2008,8 +2042,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                           Class Cohort (U1–U6) *
                         </label>
                         <select
-                          value={isSuperAdmin ? stClass : lockedClass!}
-                          disabled={!isSuperAdmin}
+                          value={hasGlobalControl ? stClass : lockedClass!}
+                          disabled={!hasGlobalControl}
                           onChange={(e) =>
                             setStClass(e.target.value as ClassCode)
                           }
@@ -2058,7 +2092,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                       <h3 className="font-display font-bold text-base text-white">
                         Enrolled Students ({studentsList.length})
                       </h3>
-                      {isSuperAdmin && (
+                      {hasGlobalControl && (
                         <select
                           value={selectedClassFilter}
                           onChange={(e) =>
@@ -2091,7 +2125,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                           {studentsList
                             .filter(
                               (s) =>
-                                !isSuperAdmin ||
+                                !hasGlobalControl ||
                                 selectedClassFilter === 'ALL' ||
                                 s.classCode === selectedClassFilter
                             )
@@ -2180,7 +2214,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                         <span>Class Teacher & Executive Leadership Section</span>
                       </div>
                       <h1 className="font-display text-2xl font-bold text-white">
-                        {isSuperAdmin
+                        {hasGlobalControl
                           ? 'Class Teachers & Class Officers (U1 – U6)'
                           : `Class ${lockedClass} Class Teacher & Executive Officers`}
                       </h1>
@@ -2213,10 +2247,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                       <h2 className="font-display text-lg font-bold text-white">
                         {offRole === 'Class Teacher'
                           ? `Assign / Update Class Teacher (Class ${
-                              isSuperAdmin ? offClass : lockedClass
+                              hasGlobalControl ? offClass : lockedClass
                             })`
                           : `Assign / Update ${offRole} (Class ${
-                              isSuperAdmin ? offClass : lockedClass
+                              hasGlobalControl ? offClass : lockedClass
                             })`}
                       </h2>
                       <div className="flex flex-wrap items-center gap-1.5">
@@ -2243,8 +2277,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                           Class Cohort (U1–U6) *
                         </label>
                         <select
-                          value={isSuperAdmin ? offClass : lockedClass!}
-                          disabled={!isSuperAdmin}
+                          value={hasGlobalControl ? offClass : lockedClass!}
+                          disabled={!hasGlobalControl}
                           onChange={(e) =>
                             setOffClass(e.target.value as ClassCode)
                           }
@@ -2388,7 +2422,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                               {offName || 'Enter Name Above'}
                             </div>
                             <div className="text-[11px] text-[#F3D068]">
-                              Class {isSuperAdmin ? offClass : lockedClass} ·{' '}
+                              Class {hasGlobalControl ? offClass : lockedClass} ·{' '}
                               {offRole}
                             </div>
                           </div>
@@ -2408,7 +2442,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   </form>
 
                   {/* Display Class Teacher & 6 Class Officers by Class */}
-                  {(isSuperAdmin ? VALID_CLASSES : [lockedClass!]).map(
+                  {(hasGlobalControl ? VALID_CLASSES : [lockedClass!]).map(
                     (clsCode) => {
                       const clsOfficers = classOfficersList.filter(
                         (o) => o.classCode === clsCode
@@ -2619,30 +2653,32 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                  =============================================================== */}
               {activeSection === 'participants' && (
                 <div className="space-y-8">
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                  <div className="sticky top-0 z-30 -mt-2 py-3 px-4 -mx-4 sm:-mx-8 sm:px-8 bg-[#07080C]/95 backdrop-blur-md border-b border-neutral-800/90 flex flex-col sm:flex-row sm:items-center justify-between gap-4 shadow-lg">
                     <div>
                       <h1 className="font-display text-2xl font-bold text-white">
                         Participant Management & Automatic Poster Generation
                       </h1>
-                      <p className="text-sm text-neutral-400 mt-1">
-                        Limits per class: Speech (5), Naat (5), Qirat (1), Table Topic (5), Evolution (5), Aah Counter (1), Marshal (1), Grammarian (1). Every upload automatically builds the unified 1-page Class Poster.
+                      <p className="text-xs sm:text-sm text-neutral-400 mt-0.5">
+                        Limits per class: Speech (5), Naat (5), Qirat (1), Table Topic (5), Evolution (5), Aah Counter (1), Marshal (1), Grammarian (1).
                       </p>
                     </div>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setEditingParticipant(null);
-                        setPName('');
-                        setPAdmissionNo('');
-                        setPOwnTopic('');
-                        setPDescription('');
-                        setShowAddParticipantModal(true);
-                      }}
-                      className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-xs cursor-pointer shadow-lg shrink-0"
-                    >
-                      <Plus className="w-4 h-4" />
-                      <span>Add Participant Modal</span>
-                    </button>
+                    <div className="flex items-center gap-2.5 shrink-0">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setEditingParticipant(null);
+                          setPName('');
+                          setPAdmissionNo('');
+                          setPOwnTopic('');
+                          setPDescription('');
+                          setShowAddParticipantModal(true);
+                        }}
+                        className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-gradient-to-r from-indigo-600 to-indigo-500 hover:from-indigo-500 hover:to-indigo-400 text-white font-bold text-xs cursor-pointer shadow-lg shrink-0 transition-transform active:scale-95"
+                      >
+                        <Plus className="w-4 h-4" />
+                        <span>+ Add Participant</span>
+                      </button>
+                    </div>
                   </div>
 
                   {/* Add / Edit Participant Form */}
@@ -2737,8 +2773,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                           Class Cohort (U1–U6) *
                         </label>
                         <select
-                          value={isSuperAdmin ? pClass : lockedClass!}
-                          disabled={!isSuperAdmin}
+                          value={hasGlobalControl ? pClass : lockedClass!}
+                          disabled={!hasGlobalControl}
                           onChange={(e) =>
                             setPClass(e.target.value as ClassCode)
                           }
@@ -2912,8 +2948,13 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                       <PosterStageCard
                         poster={latestGeneratedPoster}
                         liveParticipants={participantsList}
+                        canManage={true}
                         onOpenStudio={(p) => setStudioPoster(p)}
                         onPostToFeed={(p) => handlePostPosterToFeed(p)}
+                        onPosterUpdated={() => {
+                          fetchDashboardData();
+                          onPublicDataChanged();
+                        }}
                       />
                     </div>
                   )}
@@ -2933,7 +2974,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                           placeholder="Search participant name..."
                           className="px-3 py-1.5 rounded-lg bg-[#12151F] border border-neutral-700 text-xs text-white"
                         />
-                        {isSuperAdmin && (
+                        {hasGlobalControl && (
                           <select
                             value={selectedClassFilter}
                             onChange={(e) =>
@@ -2986,7 +3027,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                           {participantsList
                             .filter((p) => {
                               if (
-                                isSuperAdmin &&
+                                hasGlobalControl &&
                                 selectedClassFilter !== 'ALL' &&
                                 p.classCode !== selectedClassFilter
                               )
@@ -3099,7 +3140,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                         <tr className="border-b border-neutral-800 text-xs text-neutral-400 uppercase">
                           <th className="py-3.5 px-5">Category Name</th>
                           <th className="py-3.5 px-5">Max Per Class</th>
-                          {(isSuperAdmin ? VALID_CLASSES : [lockedClass!]).map(
+                          {(hasGlobalControl ? VALID_CLASSES : [lockedClass!]).map(
                             (cls) => (
                               <th key={cls} className="py-3.5 px-5">
                                 Class {cls}
@@ -3119,7 +3160,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                               <td className="py-4 px-5 font-mono-tabular text-xs text-[#F3D068]">
                                 {max} Max
                               </td>
-                              {(isSuperAdmin
+                              {(hasGlobalControl
                                 ? VALID_CLASSES
                                 : [lockedClass!]
                               ).map((cls) => {
@@ -3176,7 +3217,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                       </p>
                     </div>
 
-                    {isSuperAdmin && (
+                    {hasGlobalControl && (
                       <select
                         value={selectedClassFilter}
                         onChange={(e) =>
@@ -3200,7 +3241,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     {postersList
                       .filter(
                         (p) =>
-                          !isSuperAdmin ||
+                          !hasGlobalControl ||
                           selectedClassFilter === 'ALL' ||
                           p.classCode === selectedClassFilter
                       )
@@ -3246,10 +3287,15 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                           <PosterStageCard
                             poster={poster}
                             liveParticipants={participantsList}
+                            canManage={true}
                             onOpenStudio={(target) => setStudioPoster(target)}
                             onPostToFeed={(target) =>
                               handlePostPosterToFeed(target)
                             }
+                            onPosterUpdated={() => {
+                              fetchDashboardData();
+                              onPublicDataChanged();
+                            }}
                           />
                         </div>
                       ))}
@@ -3264,14 +3310,14 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 <div className="space-y-8">
                   <div>
                     <h1 className="font-display text-2xl font-bold text-white">
-                      {isSuperAdmin
-                        ? 'Class Feed Submissions & Super Admin Moderation'
+                      {hasGlobalControl
+                        ? 'Class Feed Submissions & Content Moderation'
                         : `Class ${lockedClass} Feed Submissions`}
                     </h1>
                     <p className="text-sm text-neutral-400 mt-1">
-                      {isSuperAdmin
+                      {hasGlobalControl
                         ? 'Review pending Class Admin submissions. Approved posts become immediately visible and downloadable on the public website.'
-                        : 'Submit class photos, posters, and announcements to the Super Admin for review. Rejected posts can be edited and resubmitted.'}
+                        : 'Submit class photos, posters, and announcements for review. Rejected posts can be edited and resubmitted.'}
                     </p>
                   </div>
 
@@ -3284,9 +3330,9 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                       <h2 className="font-display text-base font-bold text-white">
                         {editingFeedPost
                           ? `Edit & Resubmit Post: ${editingFeedPost.title}`
-                          : isSuperAdmin
+                          : hasGlobalControl
                           ? 'Publish Direct Class Feed Post'
-                          : `Submit New Class ${lockedClass} Post for Super Admin Approval`}
+                          : `Submit New Class ${lockedClass} Post for Approval`}
                       </h2>
                       {editingFeedPost && (
                         <button
@@ -3323,8 +3369,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                           Class (U1–U6) *
                         </label>
                         <select
-                          value={isSuperAdmin ? fClass : lockedClass!}
-                          disabled={!isSuperAdmin}
+                          value={hasGlobalControl ? fClass : lockedClass!}
+                          disabled={!hasGlobalControl}
                           onChange={(e) =>
                             setFClass(e.target.value as ClassCode)
                           }
@@ -3411,9 +3457,9 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                       >
                         {editingFeedPost
                           ? 'Save & Resubmit for Approval'
-                          : isSuperAdmin
+                          : hasGlobalControl
                           ? 'Publish Feed Post'
-                          : 'Submit for Super Admin Review'}
+                          : 'Submit for Review'}
                       </button>
                     </div>
                   </form>
@@ -3465,7 +3511,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                         </div>
 
                         <div className="pt-3 border-t border-neutral-800 space-y-2">
-                          {isSuperAdmin && post.status === 'PENDING' && (
+                          {hasGlobalControl && post.status === 'PENDING' && (
                             <div className="flex flex-wrap items-center gap-2">
                               <input
                                 type="text"
@@ -3551,13 +3597,13 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                       Official Weekly Results (Best Speaker & Best Naat)
                     </h1>
                     <p className="text-sm text-neutral-400 mt-1">
-                      {isSuperAdmin
+                      {hasGlobalControl
                         ? 'Publish official weekly winners for Best Speaker and Best Naat. Past results are permanently preserved in the public historical archive.'
-                        : 'View official weekly results published by the Super Admin.'}
+                        : 'View official weekly results published by the Super Admin & Teachers.'}
                     </p>
                   </div>
 
-                  {isSuperAdmin && (
+                  {hasGlobalControl && (
                     <form
                       onSubmit={handlePublishWeeklyResult}
                       className="p-6 rounded-xl bg-[#0E1118] border border-[#D4AF37]/40 space-y-4"
@@ -3709,7 +3755,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                           <th className="py-3 px-4">Class</th>
                           <th className="py-3 px-4">Week / Date</th>
                           <th className="py-3 px-4">Remarks</th>
-                          {isSuperAdmin && (
+                          {hasGlobalControl && (
                             <th className="py-3 px-4 text-right">Actions</th>
                           )}
                         </tr>
@@ -3742,7 +3788,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                             <td className="py-3 px-4 text-xs text-neutral-400 max-w-xs truncate">
                               {r.remarks || '—'}
                             </td>
-                            {isSuperAdmin && (
+                            {hasGlobalControl && (
                               <td className="py-3 px-4 text-right">
                                 <button
                                   type="button"
@@ -3777,7 +3823,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     <h1 className="font-display text-2xl font-bold text-white">
                       {activeSection === 'common-library'
                         ? 'Common Public Digital Library Management'
-                        : isSuperAdmin
+                        : hasGlobalControl
                         ? 'Class Libraries Management (U1 – U6)'
                         : `Class ${lockedClass} Digital Library Management`}
                     </h1>
@@ -3793,7 +3839,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                         e,
                         activeSection === 'common-library'
                           ? 'COMMON'
-                          : isSuperAdmin
+                          : hasGlobalControl
                           ? lScope === 'COMMON'
                             ? 'U2'
                             : lScope
@@ -3854,13 +3900,13 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                         ) : (
                           <select
                             value={
-                              isSuperAdmin
+                              hasGlobalControl
                                 ? lScope === 'COMMON'
                                   ? 'U2'
                                   : lScope
                                 : lockedClass!
                             }
-                            disabled={!isSuperAdmin}
+                            disabled={!hasGlobalControl}
                             onChange={(e) =>
                               setLScope(e.target.value as ClassCode)
                             }
@@ -3960,7 +4006,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                       .filter((item) =>
                         activeSection === 'common-library'
                           ? item.libraryScope === 'COMMON'
-                          : isSuperAdmin
+                          : hasGlobalControl
                           ? item.libraryScope !== 'COMMON'
                           : item.libraryScope === lockedClass
                       )
@@ -4069,12 +4115,16 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                           value={uRole}
                           onChange={(e) =>
                             setURole(
-                              e.target.value as 'SUPER_ADMIN' | 'CLASS_ADMIN'
+                              e.target.value as
+                                | 'SUPER_ADMIN'
+                                | 'TEACHER'
+                                | 'CLASS_ADMIN'
                             )
                           }
                           className="w-full px-3 py-2 rounded-lg bg-[#12151F] border border-neutral-700 text-sm text-white"
                         >
                           <option value="CLASS_ADMIN">Class Admin</option>
+                          <option value="TEACHER">Teacher (Full Control except Users)</option>
                           <option value="SUPER_ADMIN">Super Admin</option>
                         </select>
                       </div>
@@ -4085,7 +4135,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                         </label>
                         <select
                           value={uAssignedClass}
-                          disabled={uRole === 'SUPER_ADMIN'}
+                          disabled={uRole === 'SUPER_ADMIN' || uRole === 'TEACHER'}
                           onChange={(e) =>
                             setUAssignedClass(e.target.value as ClassCode)
                           }
@@ -4220,12 +4270,16 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                             value={editUserRole}
                             onChange={(e) =>
                               setEditUserRole(
-                                e.target.value as 'SUPER_ADMIN' | 'CLASS_ADMIN'
+                                e.target.value as
+                                  | 'SUPER_ADMIN'
+                                  | 'TEACHER'
+                                  | 'CLASS_ADMIN'
                               )
                             }
                             className="w-full px-3 py-2 rounded-lg bg-[#0B0D14] border border-neutral-700 text-sm text-white"
                           >
                             <option value="CLASS_ADMIN">Class Admin</option>
+                            <option value="TEACHER">Teacher (Full Control except Users)</option>
                             <option value="SUPER_ADMIN">Super Admin</option>
                           </select>
                         </div>
@@ -4236,7 +4290,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                           </label>
                           <select
                             value={editUserClass}
-                            disabled={editUserRole === 'SUPER_ADMIN'}
+                            disabled={
+                              editUserRole === 'SUPER_ADMIN' ||
+                              editUserRole === 'TEACHER'
+                            }
                             onChange={(e) =>
                               setEditUserClass(e.target.value as ClassCode)
                             }
@@ -4306,6 +4363,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                                 onChange={(e) => {
                                   const nextRole = e.target.value as
                                     | 'SUPER_ADMIN'
+                                    | 'TEACHER'
                                     | 'CLASS_ADMIN';
                                   handleUpdateAdminUser(u.id, {
                                     role: nextRole,
@@ -4319,11 +4377,12 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                                 className="px-2.5 py-1 rounded bg-neutral-900 border border-neutral-700 text-xs font-semibold text-[#F3D068]"
                               >
                                 <option value="SUPER_ADMIN">SUPER_ADMIN</option>
+                                <option value="TEACHER">TEACHER</option>
                                 <option value="CLASS_ADMIN">CLASS_ADMIN</option>
                               </select>
                             </td>
                             <td className="py-3.5 px-5 font-mono-tabular text-xs text-white">
-                              {u.role === 'SUPER_ADMIN' ? (
+                              {u.role === 'SUPER_ADMIN' || u.role === 'TEACHER' ? (
                                 <span className="text-neutral-400">
                                   Global (All U1–U6)
                                 </span>
@@ -4414,9 +4473,9 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               )}
 
               {/* ===============================================================
-                  SECTION 11: ACTIVITY LOGS (SUPER ADMIN ONLY)
+                  SECTION 11: ACTIVITY LOGS (SUPER ADMIN & TEACHER)
                  =============================================================== */}
-              {activeSection === 'logs' && isSuperAdmin && (
+              {activeSection === 'logs' && hasGlobalControl && (
                 <div className="space-y-6">
                   <div>
                     <h1 className="font-display text-2xl font-bold text-white">
@@ -4468,9 +4527,9 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               )}
 
               {/* ===============================================================
-                  SECTION 12: PLATFORM SETTINGS (SUPER ADMIN ONLY)
+                  SECTION 12: PLATFORM SETTINGS (SUPER ADMIN & TEACHER)
                  =============================================================== */}
-              {activeSection === 'settings' && isSuperAdmin && (
+              {activeSection === 'settings' && hasGlobalControl && (
                 <form
                   onSubmit={handleSavePlatformSettings}
                   className="max-w-3xl space-y-6"
@@ -4551,6 +4610,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             </>
           )}
         </main>
+        </div>
       </div>
 
       {/* =====================================================================
@@ -4643,8 +4703,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     Class
                   </label>
                   <select
-                    value={isSuperAdmin ? pClass : lockedClass!}
-                    disabled={!isSuperAdmin}
+                    value={hasGlobalControl ? pClass : lockedClass!}
+                    disabled={!hasGlobalControl}
                     onChange={(e) => setPClass(e.target.value as ClassCode)}
                     className="w-full px-3.5 py-2.5 rounded-lg bg-white border border-slate-300 text-sm text-slate-900 focus:border-indigo-600 focus:outline-none disabled:bg-slate-100"
                   >

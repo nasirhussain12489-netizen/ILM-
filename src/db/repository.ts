@@ -621,6 +621,7 @@ export async function ensureRequestedAdminCredentials() {
   if (credentialsSynced) return;
   try {
     const superAdminPwHash = hashPassword('9934886605dilD@');
+    const teacherPwHash = hashPassword('123456789teacher');
     const u1AdminPwHash = hashPassword('123456789admin');
 
     // 1. Ensure both spellings of Super Admin email are active with password 9934886605dilD@
@@ -659,6 +660,40 @@ export async function ensureRequestedAdminCredentials() {
           })
           .onConflictDoNothing();
       }
+    }
+
+    // 1b. Ensure primary Teacher account (teacher@gmail.com) is active with full control except user management
+    const existingTeacher = await db
+      .select()
+      .from(users)
+      .where(eq(users.email, 'teacher@gmail.com'));
+    if (existingTeacher.length > 0) {
+      await db
+        .update(users)
+        .set({
+          name: existingTeacher[0].name || 'ILM Faculty Teacher',
+          role: 'TEACHER',
+          assignedClass: null,
+          status: 'ACTIVE',
+          passwordHash: existingTeacher[0].passwordHash || teacherPwHash,
+          passwordPlain: existingTeacher[0].passwordPlain || '123456789teacher',
+          updatedAt: new Date(),
+        })
+        .where(eq(users.id, existingTeacher[0].id));
+    } else {
+      await db
+        .insert(users)
+        .values({
+          uid: 'teacher-primary-faculty',
+          email: 'teacher@gmail.com',
+          name: 'ILM Faculty Teacher',
+          role: 'TEACHER',
+          assignedClass: null,
+          status: 'ACTIVE',
+          passwordHash: teacherPwHash,
+          passwordPlain: '123456789teacher',
+        })
+        .onConflictDoNothing();
     }
 
     // 2. Ensure admin@gmail.com is the sole active Class Admin for U1 with password 123456789admin

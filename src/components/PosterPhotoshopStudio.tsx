@@ -204,7 +204,23 @@ export interface StudioStateSnapshot {
     | 'OBSIDIAN_GOLD'
     | 'ROYAL_NAVY'
     | 'IMPERIAL_EMERALD'
-    | 'VELVET_CRIMSON';
+    | 'VELVET_CRIMSON'
+    | 'CYBER_NEON_AZURE'
+    | 'ROYAL_AMETHYST'
+    | 'DESERT_SANDSTONE'
+    | 'ARCTIC_FROST_SLATE'
+    | 'SUNSET_AMBER_CORAL'
+    | 'MIDNIGHT_TITANIUM'
+    | 'AI_ISLAMIC_ILLUMINATION'
+    | 'AI_EMERALD_MIHRAB'
+    | 'AI_ROYAL_SAPPHIRE'
+    | 'AI_VINTAGE_BOTANICAL'
+    | 'AI_BAROQUE_CRIMSON'
+    | 'TURQUOISE_PERSIAN'
+    | 'MAJESTIC_MARBLE_GOLD'
+    | 'CELESTIAL_COSMIC_GOLD'
+    | 'SAHARA_GOLDEN_OASIS'
+    | 'CHAMPAGNE_LUXE';
   customBgUrl: string | null;
   customBgOpacity: number;
   showCompartmentBoxes: boolean;
@@ -783,9 +799,16 @@ export const PosterPhotoshopStudio: React.FC<PosterPhotoshopStudioProps> = ({
         reader.readAsDataURL(file);
       });
       try {
+        const sessionToken = sessionStorage.getItem('ilm_admin_session_token');
+        const headers: Record<string, string> = {
+          'Content-Type': 'application/json',
+        };
+        if (sessionToken) {
+          headers.Authorization = `Bearer ${sessionToken}`;
+        }
         const res = await fetch('/api/public/upload-poster', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers,
           body: JSON.stringify({
             fileName: file.name,
             base64Data: dataUrl,
@@ -874,6 +897,154 @@ export const PosterPhotoshopStudio: React.FC<PosterPhotoshopStudioProps> = ({
         ctx.restore();
       }
       ctx.restore();
+    } else if (studio.bgTheme === 'DESERT_SANDSTONE') {
+      const sandGrad = ctx.createLinearGradient(0, 0, cw, ch);
+      sandGrad.addColorStop(0, '#FDFBF7');
+      sandGrad.addColorStop(0.4, '#F5EDE0');
+      sandGrad.addColorStop(1, '#E8D8C4');
+      ctx.fillStyle = sandGrad;
+      ctx.fillRect(0, 0, cw, ch);
+
+      // Warm desert dunes ambient overlay
+      const dGlow = ctx.createRadialGradient(cw / 2, 0, 40, cw / 2, 0, cw * 0.7);
+      dGlow.addColorStop(0, 'rgba(217, 165, 110, 0.28)');
+      dGlow.addColorStop(1, 'rgba(217, 165, 110, 0)');
+      ctx.fillStyle = dGlow;
+      ctx.fillRect(0, 0, cw, ch);
+    } else if (studio.bgTheme === 'ARCTIC_FROST_SLATE') {
+      const frostGrad = ctx.createLinearGradient(0, 0, cw, ch);
+      frostGrad.addColorStop(0, '#0F172A');
+      frostGrad.addColorStop(0.5, '#1E293B');
+      frostGrad.addColorStop(1, '#0B0F19');
+      ctx.fillStyle = frostGrad;
+      ctx.fillRect(0, 0, cw, ch);
+
+      // Cool cyan auroral glow
+      const aGlow = ctx.createRadialGradient(cw / 2, ch / 3, 20, cw / 2, ch / 3, cw * 0.6);
+      aGlow.addColorStop(0, 'rgba(56, 189, 248, 0.18)');
+      aGlow.addColorStop(1, 'rgba(56, 189, 248, 0)');
+      ctx.fillStyle = aGlow;
+      ctx.fillRect(0, 0, cw, ch);
+    } else if (studio.bgTheme === 'CYBER_NEON_AZURE') {
+      const neonGrad = ctx.createLinearGradient(0, 0, cw, ch);
+      neonGrad.addColorStop(0, '#030712');
+      neonGrad.addColorStop(0.5, '#051833');
+      neonGrad.addColorStop(1, '#020617');
+      ctx.fillStyle = neonGrad;
+      ctx.fillRect(0, 0, cw, ch);
+
+      // Electric cyan & magenta neon halo
+      const nGlow = ctx.createRadialGradient(cw / 2, 220, 20, cw / 2, 220, cw * 0.5);
+      nGlow.addColorStop(0, 'rgba(6, 182, 212, 0.24)');
+      nGlow.addColorStop(0.6, 'rgba(99, 102, 241, 0.14)');
+      nGlow.addColorStop(1, 'rgba(0, 0, 0, 0)');
+      ctx.fillStyle = nGlow;
+      ctx.fillRect(0, 0, cw, ch);
+    } else if (studio.bgTheme === 'ROYAL_AMETHYST') {
+      const purpGrad = ctx.createLinearGradient(0, 0, cw, ch);
+      purpGrad.addColorStop(0, '#10051C');
+      purpGrad.addColorStop(0.5, '#220B3B');
+      purpGrad.addColorStop(1, '#0B0214');
+      ctx.fillStyle = purpGrad;
+      ctx.fillRect(0, 0, cw, ch);
+
+      const pGlow = ctx.createRadialGradient(cw / 2, 200, 20, cw / 2, 200, cw * 0.5);
+      pGlow.addColorStop(0, 'rgba(192, 132, 252, 0.22)');
+      pGlow.addColorStop(1, 'rgba(0, 0, 0, 0)');
+      ctx.fillStyle = pGlow;
+      ctx.fillRect(0, 0, cw, ch);
+    } else if (studio.bgTheme === 'SUNSET_AMBER_CORAL') {
+      const sunGrad = ctx.createLinearGradient(0, 0, cw, ch);
+      sunGrad.addColorStop(0, '#1C0A00');
+      sunGrad.addColorStop(0.5, '#381604');
+      sunGrad.addColorStop(1, '#120400');
+      ctx.fillStyle = sunGrad;
+      ctx.fillRect(0, 0, cw, ch);
+
+      const sGlow = ctx.createRadialGradient(cw / 2, 240, 20, cw / 2, 240, cw * 0.5);
+      sGlow.addColorStop(0, 'rgba(251, 146, 60, 0.24)');
+      sGlow.addColorStop(1, 'rgba(0, 0, 0, 0)');
+      ctx.fillStyle = sGlow;
+      ctx.fillRect(0, 0, cw, ch);
+    } else if (studio.bgTheme === 'MIDNIGHT_TITANIUM') {
+      const titGrad = ctx.createLinearGradient(0, 0, cw, ch);
+      titGrad.addColorStop(0, '#090A0F');
+      titGrad.addColorStop(0.5, '#161922');
+      titGrad.addColorStop(1, '#08080C');
+      ctx.fillStyle = titGrad;
+      ctx.fillRect(0, 0, cw, ch);
+
+      const tGlow = ctx.createRadialGradient(cw / 2, 240, 20, cw / 2, 240, cw * 0.5);
+      tGlow.addColorStop(0, 'rgba(148, 163, 184, 0.18)');
+      tGlow.addColorStop(1, 'rgba(0, 0, 0, 0)');
+      ctx.fillStyle = tGlow;
+      ctx.fillRect(0, 0, cw, ch);
+    } else if (studio.bgTheme === 'TURQUOISE_PERSIAN') {
+      const turqGrad = ctx.createLinearGradient(0, 0, cw, ch);
+      turqGrad.addColorStop(0, '#042F2E');
+      turqGrad.addColorStop(0.5, '#0E4E4C');
+      turqGrad.addColorStop(1, '#021F1E');
+      ctx.fillStyle = turqGrad;
+      ctx.fillRect(0, 0, cw, ch);
+
+      const tuGlow = ctx.createRadialGradient(cw / 2, 220, 20, cw / 2, 220, cw * 0.5);
+      tuGlow.addColorStop(0, 'rgba(45, 212, 191, 0.22)');
+      tuGlow.addColorStop(1, 'rgba(0, 0, 0, 0)');
+      ctx.fillStyle = tuGlow;
+      ctx.fillRect(0, 0, cw, ch);
+    } else if (studio.bgTheme === 'MAJESTIC_MARBLE_GOLD') {
+      const mGrad = ctx.createLinearGradient(0, 0, cw, ch);
+      mGrad.addColorStop(0, '#1E1E24');
+      mGrad.addColorStop(0.5, '#2B2B36');
+      mGrad.addColorStop(1, '#15151A');
+      ctx.fillStyle = mGrad;
+      ctx.fillRect(0, 0, cw, ch);
+
+      const mGlow = ctx.createRadialGradient(cw / 2, 240, 20, cw / 2, 240, cw * 0.5);
+      mGlow.addColorStop(0, 'rgba(234, 179, 8, 0.25)');
+      mGlow.addColorStop(1, 'rgba(0, 0, 0, 0)');
+      ctx.fillStyle = mGlow;
+      ctx.fillRect(0, 0, cw, ch);
+    } else if (studio.bgTheme === 'CELESTIAL_COSMIC_GOLD') {
+      const cGrad = ctx.createLinearGradient(0, 0, cw, ch);
+      cGrad.addColorStop(0, '#060012');
+      cGrad.addColorStop(0.5, '#190038');
+      cGrad.addColorStop(1, '#030008');
+      ctx.fillStyle = cGrad;
+      ctx.fillRect(0, 0, cw, ch);
+
+      const cGlow = ctx.createRadialGradient(cw / 2, 220, 20, cw / 2, 220, cw * 0.55);
+      cGlow.addColorStop(0, 'rgba(245, 158, 11, 0.24)');
+      cGlow.addColorStop(0.6, 'rgba(168, 85, 247, 0.16)');
+      cGlow.addColorStop(1, 'rgba(0, 0, 0, 0)');
+      ctx.fillStyle = cGlow;
+      ctx.fillRect(0, 0, cw, ch);
+    } else if (studio.bgTheme === 'SAHARA_GOLDEN_OASIS') {
+      const saGrad = ctx.createLinearGradient(0, 0, cw, ch);
+      saGrad.addColorStop(0, '#2D1B00');
+      saGrad.addColorStop(0.5, '#452A02');
+      saGrad.addColorStop(1, '#1A0F00');
+      ctx.fillStyle = saGrad;
+      ctx.fillRect(0, 0, cw, ch);
+
+      const saGlow = ctx.createRadialGradient(cw / 2, 240, 20, cw / 2, 240, cw * 0.5);
+      saGlow.addColorStop(0, 'rgba(251, 191, 36, 0.28)');
+      saGlow.addColorStop(1, 'rgba(0, 0, 0, 0)');
+      ctx.fillStyle = saGlow;
+      ctx.fillRect(0, 0, cw, ch);
+    } else if (studio.bgTheme === 'CHAMPAGNE_LUXE') {
+      const chGrad = ctx.createLinearGradient(0, 0, cw, ch);
+      chGrad.addColorStop(0, '#FAF7F2');
+      chGrad.addColorStop(0.5, '#F3ECE1');
+      chGrad.addColorStop(1, '#E9DEC9');
+      ctx.fillStyle = chGrad;
+      ctx.fillRect(0, 0, cw, ch);
+
+      const chGlow = ctx.createRadialGradient(cw / 2, 240, 20, cw / 2, 240, cw * 0.5);
+      chGlow.addColorStop(0, 'rgba(217, 178, 110, 0.22)');
+      chGlow.addColorStop(1, 'rgba(0, 0, 0, 0)');
+      ctx.fillStyle = chGlow;
+      ctx.fillRect(0, 0, cw, ch);
     } else {
       const bgGrad = ctx.createLinearGradient(0, 0, cw, ch);
       if (studio.bgTheme === 'ROYAL_NAVY') {
@@ -895,6 +1066,31 @@ export const PosterPhotoshopStudio: React.FC<PosterPhotoshopStudioProps> = ({
       }
       ctx.fillStyle = bgGrad;
       ctx.fillRect(0, 0, cw, ch);
+    }
+
+    // AI-Generated High-Fidelity Poster Artwork Backdrops
+    const aiThemeImages: Record<string, string> = {
+      AI_ISLAMIC_ILLUMINATION: '/src/assets/images/template_islamic_gold_1791886419127.jpg',
+      AI_EMERALD_MIHRAB: '/src/assets/images/template_emerald_arch_1791886441980.jpg',
+      AI_ROYAL_SAPPHIRE: '/src/assets/images/template_sapphire_gold_1791886464289.jpg',
+      AI_VINTAGE_BOTANICAL: '/src/assets/images/template_rose_botanical_1791886488823.jpg',
+      AI_BAROQUE_CRIMSON: '/src/assets/images/template_ruby_crimson_1791886521533.jpg',
+    };
+
+    if (aiThemeImages[studio.bgTheme]) {
+      const aiImg = ensureImageLoaded(aiThemeImages[studio.bgTheme]);
+      if (aiImg) {
+        ctx.save();
+        ctx.globalAlpha = 0.88;
+        ctx.drawImage(aiImg, 0, 0, cw, ch);
+        // Vignette over artwork
+        const artVignette = ctx.createRadialGradient(cw / 2, ch / 2, cw * 0.25, cw / 2, ch / 2, cw * 0.6);
+        artVignette.addColorStop(0, 'rgba(0, 0, 0, 0)');
+        artVignette.addColorStop(1, 'rgba(0, 0, 0, 0.45)');
+        ctx.fillStyle = artVignette;
+        ctx.fillRect(0, 0, cw, ch);
+        ctx.restore();
+      }
     }
 
     // Custom Uploaded Base Poster / Background Texture
@@ -928,8 +1124,36 @@ export const PosterPhotoshopStudio: React.FC<PosterPhotoshopStudioProps> = ({
     }
 
     // 3. Outer Frame Border
-    const isLightBotanical = studio.bgTheme === 'BOTANICAL_BLUSH';
-    const frameStrokeColor = isLightBotanical ? '#C88A65' : '#D4AF37';
+    const isLightBotanical = studio.bgTheme === 'BOTANICAL_BLUSH' || studio.bgTheme === 'AI_VINTAGE_BOTANICAL';
+    const isSandstone = studio.bgTheme === 'DESERT_SANDSTONE' || studio.bgTheme === 'CHAMPAGNE_LUXE';
+    const isCyberNeon = studio.bgTheme === 'CYBER_NEON_AZURE';
+    const isAmethyst = studio.bgTheme === 'ROYAL_AMETHYST' || studio.bgTheme === 'CELESTIAL_COSMIC_GOLD';
+    const isArctic = studio.bgTheme === 'ARCTIC_FROST_SLATE';
+    const isSunset = studio.bgTheme === 'SUNSET_AMBER_CORAL' || studio.bgTheme === 'SAHARA_GOLDEN_OASIS';
+    const isEmerald = studio.bgTheme === 'IMPERIAL_EMERALD' || studio.bgTheme === 'AI_EMERALD_MIHRAB' || studio.bgTheme === 'TURQUOISE_PERSIAN';
+    const isCrimson = studio.bgTheme === 'VELVET_CRIMSON' || studio.bgTheme === 'AI_BAROQUE_CRIMSON';
+    const isTitanium = studio.bgTheme === 'MIDNIGHT_TITANIUM' || studio.bgTheme === 'MAJESTIC_MARBLE_GOLD';
+    const isNavy = studio.bgTheme === 'ROYAL_NAVY' || studio.bgTheme === 'AI_ROYAL_SAPPHIRE';
+
+    const frameStrokeColor = isLightBotanical
+      ? '#C88A65'
+      : isSandstone
+      ? '#B88655'
+      : isCyberNeon
+      ? '#06B6D4'
+      : isAmethyst
+      ? '#C084FC'
+      : isArctic
+      ? '#38BDF8'
+      : isSunset
+      ? '#FB923C'
+      : isEmerald
+      ? '#10B981'
+      : isCrimson
+      ? '#F43F5E'
+      : isTitanium
+      ? '#94A3B8'
+      : '#D4AF37';
 
     if (studio.borderThickness > 0) {
       ctx.strokeStyle = frameStrokeColor;
@@ -1024,12 +1248,50 @@ export const PosterPhotoshopStudio: React.FC<PosterPhotoshopStudioProps> = ({
     if (studio.showCompartmentBoxes && cw >= 1400) {
       const boxFill = isLightBotanical
         ? 'rgba(255, 252, 250, 0.72)'
+        : isSandstone
+        ? 'rgba(253, 251, 247, 0.82)'
+        : isCyberNeon
+        ? 'rgba(5, 12, 28, 0.78)'
+        : isAmethyst
+        ? 'rgba(22, 10, 36, 0.78)'
+        : isArctic
+        ? 'rgba(15, 23, 42, 0.78)'
+        : isSunset
+        ? 'rgba(28, 10, 2, 0.78)'
+        : isEmerald
+        ? 'rgba(4, 18, 14, 0.78)'
+        : isCrimson
+        ? 'rgba(22, 5, 8, 0.78)'
+        : isTitanium
+        ? 'rgba(15, 17, 24, 0.78)'
+        : isNavy
+        ? 'rgba(6, 14, 32, 0.78)'
         : 'rgba(17, 20, 30, 0.72)';
+
       const boxStroke = isLightBotanical
         ? 'rgba(200, 138, 101, 0.55)'
+        : isSandstone
+        ? 'rgba(184, 134, 85, 0.55)'
+        : isCyberNeon
+        ? 'rgba(6, 182, 212, 0.55)'
+        : isAmethyst
+        ? 'rgba(192, 132, 252, 0.5)'
+        : isArctic
+        ? 'rgba(56, 189, 248, 0.5)'
+        : isSunset
+        ? 'rgba(251, 146, 60, 0.5)'
+        : isEmerald
+        ? 'rgba(16, 185, 129, 0.5)'
+        : isCrimson
+        ? 'rgba(244, 63, 94, 0.5)'
+        : isTitanium
+        ? 'rgba(148, 163, 184, 0.45)'
+        : isNavy
+        ? 'rgba(96, 165, 250, 0.5)'
         : 'rgba(212, 175, 55, 0.45)';
-      const headerFill = isLightBotanical ? '#C88A65' : '#D4AF37';
-      const headerTextCol = isLightBotanical ? '#FFFFFF' : '#090B10';
+
+      const headerFill = frameStrokeColor;
+      const headerTextCol = isLightBotanical || isSandstone ? '#FFFFFF' : '#05070E';
 
       const compartments = [
         { x: 60, y: 215, w: 350, h: 365, title: 'MARSHAL' },
@@ -1233,11 +1495,15 @@ export const PosterPhotoshopStudio: React.FC<PosterPhotoshopStudioProps> = ({
         ctx.translate(-cx, -cy);
       }
 
-      const cardBg = isLightBotanical ? '#FFFDFB' : '#111318';
+      const cardBg = isLightBotanical
+        ? '#FFFDFB'
+        : isSandstone
+        ? '#FAF7F2'
+        : '#111318';
       const cardStroke =
         selectedCardId === card.id
           ? '#00D4FF'
-          : card.borderColor || (isLightBotanical ? '#C88A65' : '#D4AF37');
+          : card.borderColor || frameStrokeColor;
 
       ctx.fillStyle = cardBg;
       ctx.strokeStyle = cardStroke;
@@ -1278,7 +1544,11 @@ export const PosterPhotoshopStudio: React.FC<PosterPhotoshopStudioProps> = ({
       }
       ctx.clip();
 
-      ctx.fillStyle = isLightBotanical ? '#F5E6E0' : '#1A1D24';
+      ctx.fillStyle = isLightBotanical
+        ? '#F5E6E0'
+        : isSandstone
+        ? '#ECE2D4'
+        : '#1A1D24';
       ctx.fillRect(x + 4, y + 4, cardW - 8, imgH - 4);
 
       const pImg = ensureImageLoaded(card.photoUrl);
@@ -1295,9 +1565,29 @@ export const PosterPhotoshopStudio: React.FC<PosterPhotoshopStudioProps> = ({
       ctx.restore();
 
       // Name Badge Plate at Bottom of Card
-      ctx.fillStyle =
-        card.nameBgColor ||
-        (isLightBotanical ? '#8A4F38' : '#171B26');
+      const defaultBadgeColor = isLightBotanical
+        ? '#8A4F38'
+        : isSandstone
+        ? '#7E5233'
+        : isCyberNeon
+        ? '#082F49'
+        : isAmethyst
+        ? '#3B0764'
+        : isArctic
+        ? '#0C4A6E'
+        : isSunset
+        ? '#7C2D12'
+        : isEmerald
+        ? '#064E3B'
+        : isCrimson
+        ? '#881337'
+        : isTitanium
+        ? '#1E293B'
+        : isNavy
+        ? '#1E3A8A'
+        : '#171B26';
+
+      ctx.fillStyle = card.nameBgColor || defaultBadgeColor;
       ctx.beginPath();
       ctx.roundRect(
         x + 4,
@@ -1323,7 +1613,7 @@ export const PosterPhotoshopStudio: React.FC<PosterPhotoshopStudioProps> = ({
       );
 
       if (!isCompact) {
-        ctx.fillStyle = '#F3D068';
+        ctx.fillStyle = frameStrokeColor;
         ctx.font = "600 10px 'Plus Jakarta Sans', sans-serif";
         ctx.fillText(
           `${card.categoryName.toUpperCase()} · ${card.classCode}`,
@@ -2254,6 +2544,17 @@ export const PosterPhotoshopStudio: React.FC<PosterPhotoshopStudioProps> = ({
               onChange={handleUploadFloatingImageLayer}
             />
           </label>
+
+          {/* Quick Template Switcher */}
+          <button
+            type="button"
+            onClick={() => setRightTab('LAYOUT')}
+            className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg bg-[#D4AF37]/15 hover:bg-[#D4AF37]/25 text-[#F3D068] border border-[#D4AF37]/40 text-xs font-semibold cursor-pointer shrink-0"
+            title="Choose from 20 distinct poster template designs, AI artwork backgrounds and color schemes"
+          >
+            <Sparkles className="w-3.5 h-3.5 text-[#D4AF37]" />
+            <span>Choose Template (20 Styles & AI Art)</span>
+          </button>
         </div>
 
         {/* Center Undo / Redo / Zoom / Grid Controls */}
@@ -3866,30 +4167,180 @@ export const PosterPhotoshopStudio: React.FC<PosterPhotoshopStudioProps> = ({
                 {/* Theme & Compartment Toggles */}
                 <div className="p-3.5 rounded-xl bg-[#11141E] border border-neutral-800 space-y-3">
                   <div className="font-semibold text-[#F3D068] uppercase tracking-wider">
-                    Poster Theme & Compartments
+                    Poster Template Styles & Color Schemes (20 Templates)
                   </div>
-                  <div className="grid grid-cols-2 gap-2">
+                  <div className="grid grid-cols-2 gap-2 max-h-80 overflow-y-auto pr-1">
                     {(
                       [
+                        // 1-5: AI-Generated Ornate Artwork Master Templates
+                        {
+                          id: 'AI_ISLAMIC_ILLUMINATION',
+                          label: '✨ AI Islamic Gold Manuscript',
+                          sub: 'AI-Generated 24K Arabesque & Marble',
+                          titleCol: '#FDE047',
+                          frameShape: 'ARCH',
+                          isAi: true,
+                        },
+                        {
+                          id: 'AI_EMERALD_MIHRAB',
+                          label: '🕌 AI Emerald Mihrab Arch',
+                          sub: 'AI-Generated Malachite & Gold Filigree',
+                          titleCol: '#A7F3D0',
+                          frameShape: 'ARCH',
+                          isAi: true,
+                        },
+                        {
+                          id: 'AI_ROYAL_SAPPHIRE',
+                          label: '👑 AI Sapphire Royal Award',
+                          sub: 'AI-Generated Deep Blue Satin & Gold',
+                          titleCol: '#93C5FD',
+                          frameShape: 'ROUNDED',
+                          isAi: true,
+                        },
+                        {
+                          id: 'AI_VINTAGE_BOTANICAL',
+                          label: '🌹 AI Botanical Parchment',
+                          sub: 'AI-Generated Watercolor Floral Corners',
+                          titleCol: '#7C2D12',
+                          frameShape: 'ROUNDED',
+                          isAi: true,
+                        },
+                        {
+                          id: 'AI_BAROQUE_CRIMSON',
+                          label: '⚜️ AI Baroque Ruby Velvet',
+                          sub: 'AI-Generated Imperial Crown & Gold Leaf',
+                          titleCol: '#FECDD3',
+                          frameShape: 'ARCH',
+                          isAi: true,
+                        },
+                        // 6-20: Modern, Classical & Vibrant Vector Styled Templates
                         {
                           id: 'BOTANICAL_BLUSH',
-                          label: 'Botanical Blush (Official)',
+                          label: '🌸 Botanical Blush',
+                          sub: 'Rose & Warm Cream Watercolor',
                           titleCol: '#7A4938',
+                          frameShape: 'ROUNDED',
+                          isAi: false,
                         },
                         {
                           id: 'OBSIDIAN_GOLD',
-                          label: 'Obsidian & Gold',
+                          label: '🏆 Obsidian & Gold',
+                          sub: 'Royal Black & 24K Gold Spotlight',
                           titleCol: '#FFFFFF',
+                          frameShape: 'ROUNDED',
+                          isAi: false,
                         },
                         {
                           id: 'ROYAL_NAVY',
-                          label: 'Royal Navy',
+                          label: '⚓ Royal Navy & Gold',
+                          sub: 'Deep Oceanic Blue & Classical Arch',
                           titleCol: '#FFFFFF',
+                          frameShape: 'ARCH',
+                          isAi: false,
                         },
                         {
                           id: 'IMPERIAL_EMERALD',
-                          label: 'Imperial Emerald',
+                          label: '🌿 Imperial Emerald',
+                          sub: 'Jade & Forest Luxury Gold',
                           titleCol: '#FFFFFF',
+                          frameShape: 'ROUNDED',
+                          isAi: false,
+                        },
+                        {
+                          id: 'VELVET_CRIMSON',
+                          label: '🍷 Velvet Crimson',
+                          sub: 'Ruby & Rose Gold Ceremony',
+                          titleCol: '#FFFFFF',
+                          frameShape: 'ARCH',
+                          isAi: false,
+                        },
+                        {
+                          id: 'CYBER_NEON_AZURE',
+                          label: '⚡ Cyber Neon Azure',
+                          sub: 'Electric Cyan & Indigo Glow',
+                          titleCol: '#38BDF8',
+                          frameShape: 'SQUARE',
+                          isAi: false,
+                        },
+                        {
+                          id: 'ROYAL_AMETHYST',
+                          label: '🔮 Royal Amethyst',
+                          sub: 'Regal Violet & Lilac Medallion',
+                          titleCol: '#E9D5FF',
+                          frameShape: 'CIRCLE',
+                          isAi: false,
+                        },
+                        {
+                          id: 'DESERT_SANDSTONE',
+                          label: '🏜️ Desert Sandstone',
+                          sub: 'Warm Ivory & Terracotta Arch',
+                          titleCol: '#7C2D12',
+                          frameShape: 'ARCH',
+                          isAi: false,
+                        },
+                        {
+                          id: 'ARCTIC_FROST_SLATE',
+                          label: '❄️ Arctic Frost Slate',
+                          sub: 'Ice Blue & Charcoal Slate',
+                          titleCol: '#E0F2FE',
+                          frameShape: 'ROUNDED',
+                          isAi: false,
+                        },
+                        {
+                          id: 'SUNSET_AMBER_CORAL',
+                          label: '🌅 Sunset Amber Coral',
+                          sub: 'Sunburst Copper & Tangerine',
+                          titleCol: '#FFEDD5',
+                          frameShape: 'ROUNDED',
+                          isAi: false,
+                        },
+                        {
+                          id: 'TURQUOISE_PERSIAN',
+                          label: '💎 Turquoise Persian Tile',
+                          sub: 'Persian Cyan & Mint Gold',
+                          titleCol: '#2DD4BF',
+                          frameShape: 'ROUNDED',
+                          isAi: false,
+                        },
+                        {
+                          id: 'MAJESTIC_MARBLE_GOLD',
+                          label: '🏛️ Majestic Black Marble',
+                          sub: 'Anthracite Marble & Yellow Gold',
+                          titleCol: '#FACC15',
+                          frameShape: 'SQUARE',
+                          isAi: false,
+                        },
+                        {
+                          id: 'CELESTIAL_COSMIC_GOLD',
+                          label: '🌌 Celestial Cosmic Gold',
+                          sub: 'Deep Cosmos Nebula & Gold Star',
+                          titleCol: '#FDE68A',
+                          frameShape: 'CIRCLE',
+                          isAi: false,
+                        },
+                        {
+                          id: 'SAHARA_GOLDEN_OASIS',
+                          label: '🐪 Sahara Golden Oasis',
+                          sub: 'Warm Bronze & Deep Amber',
+                          titleCol: '#FEF08A',
+                          frameShape: 'ROUNDED',
+                          isAi: false,
+                        },
+                        {
+                          id: 'CHAMPAGNE_LUXE',
+                          label: '🥂 Champagne Luxe Minimal',
+                          sub: 'Light Champagne & Pearl White',
+                          titleCol: '#78350F',
+                          frameShape: 'ROUNDED',
+                          isAi: false,
+                        },
+                        {
+                          id: 'MIDNIGHT_TITANIUM',
+                          label: '🛡️ Midnight Titanium',
+                          sub: 'Sleek Monochrome Carbon & Silver',
+                          titleCol: '#F1F5F9',
+                          frameShape: 'SQUARE',
+                          isAi: false,
                         },
                       ] as const
                     ).map((th) => (
@@ -3902,17 +4353,28 @@ export const PosterPhotoshopStudio: React.FC<PosterPhotoshopStudioProps> = ({
                               ...studio,
                               bgTheme: th.id,
                               titleColor: th.titleCol,
+                              frameShape: th.frameShape,
                             },
-                            `Switched Theme to ${th.label}`
+                            `Applied Template: ${th.label}`
                           )
                         }
-                        className={`p-2 rounded-lg border text-left font-medium cursor-pointer ${
+                        className={`p-2 rounded-lg border text-left font-medium cursor-pointer transition-all relative ${
                           studio.bgTheme === th.id
-                            ? 'bg-[#D4AF37]/20 border-[#D4AF37] text-[#F3D068]'
-                            : 'bg-[#090B10] border-neutral-800 text-neutral-300'
+                            ? 'bg-[#D4AF37]/25 border-[#D4AF37] text-[#F3D068] shadow-md ring-1 ring-[#D4AF37]/50'
+                            : 'bg-[#090B10] border-neutral-800 text-neutral-300 hover:border-neutral-700'
                         }`}
                       >
-                        {th.label}
+                        {th.isAi && (
+                          <span className="absolute top-1.5 right-1.5 px-1 py-0.2 rounded bg-indigo-900/80 border border-indigo-500/60 text-[9px] font-bold text-indigo-200">
+                            AI ART
+                          </span>
+                        )}
+                        <div className="flex items-center gap-1.5 font-bold text-xs truncate pr-10">
+                          <span>{th.label}</span>
+                        </div>
+                        <div className="text-[10px] text-neutral-400 mt-0.5 truncate">
+                          {th.sub}
+                        </div>
                       </button>
                     ))}
                   </div>

@@ -55,6 +55,11 @@ export default function App() {
   }, [loadPublicBootstrap]);
 
   const handleLoginSuccess = (token: string, user: AdminUser) => {
+    try {
+      sessionStorage.setItem('ilm_admin_session_token', token);
+    } catch {
+      // ignore
+    }
     setAuthToken(token);
     setAdminUser(user);
     setShowLoginModal(false);
@@ -62,6 +67,11 @@ export default function App() {
   };
 
   const handleLogout = async () => {
+    try {
+      sessionStorage.removeItem('ilm_admin_session_token');
+    } catch {
+      // ignore
+    }
     try {
       await signOut(auth);
     } catch {

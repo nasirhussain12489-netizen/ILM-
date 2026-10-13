@@ -49,3 +49,24 @@
 .gold-border-glow:hover {
   border-color: rgba(212, 175, 55, 0.65);
 }
+
+/* Custom sleek dark gold scrollbars for dual-pane independent scrolling */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: rgba(11, 13, 20, 0.6);
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(212, 175, 55, 0.25);
+  border-radius: 9999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(212, 175, 55, 0.55);
+}
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(212, 175, 55, 0.25) rgba(11, 13, 20, 0.6);
+}
+

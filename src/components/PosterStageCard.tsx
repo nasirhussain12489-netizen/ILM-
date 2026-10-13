@@ -16,12 +16,33 @@ import {
   X,
 } from 'lucide-react';
 import { PosterRecord, ParticipantRecord } from '../types.ts';
+import { auth } from '../lib/firebase.ts';
 import {
   IlmLogo,
   downloadPosterAsPng,
   rasterizePosterToPngDataUrl,
 } from './IlmLogo.tsx';
 import { buildIlmPosterSvg, CATEGORY_ORDER } from '../lib/posterSvg.ts';
+
+async function getPosterAuthHeaders(): Promise<Record<string, string>> {
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+  };
+  const sessionToken = sessionStorage.getItem('ilm_admin_session_token');
+  if (sessionToken) {
+    headers.Authorization = `Bearer ${sessionToken}`;
+    return headers;
+  }
+  if (auth.currentUser) {
+    try {
+      const idToken = await auth.currentUser.getIdToken();
+      headers.Authorization = `Bearer ${idToken}`;
+    } catch {
+      // ignore
+    }
+  }
+  return headers;
+}
 
 interface PosterStageCardProps {
   poster: PosterRecord;
@@ -169,9 +190,10 @@ export const PosterStageCard: React.FC<PosterStageCardProps> = ({
         reader.readAsDataURL(file);
       });
 
+      const headers = await getPosterAuthHeaders();
       const uploadRes = await fetch('/api/public/upload-poster', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers,
         body: JSON.stringify({
           fileName: file.name,
           base64Data,
@@ -184,7 +206,7 @@ export const PosterStageCard: React.FC<PosterStageCardProps> = ({
 
       const patchRes = await fetch(`/api/public/posters/${poster.id}`, {
         method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
+        headers,
         body: JSON.stringify({
           posterImageUrl: uploadJson.fileUrl,
           participantsSnapshot: JSON.stringify(parsedParticipants),
@@ -220,9 +242,10 @@ export const PosterStageCard: React.FC<PosterStageCardProps> = ({
     setResettingAuto(true);
     setStatusToast(null);
     try {
+      const headers = await getPosterAuthHeaders();
       const res = await fetch(`/api/public/posters/${poster.id}`, {
         method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
+        headers,
         body: JSON.stringify({ resetToAuto: true }),
       });
       const json = await res.json();
@@ -263,12 +286,13 @@ export const PosterStageCard: React.FC<PosterStageCardProps> = ({
       };
 
       const pngOrCustomUrl = await rasterizePosterToPngDataUrl(effectivePoster);
+      const headers = await getPosterAuthHeaders();
 
       const res = await fetch(
         `/api/public/posters/${poster.id}/share-to-feed`,
         {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers,
           body: JSON.stringify({
             title: shareTitle.trim(),
             caption: shareCaption.trim(),
