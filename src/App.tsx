@@ -32,20 +32,55 @@ export default function App() {
   const [showLoginModal, setShowLoginModal] = useState(false);
   const [viewMode, setViewMode] = useState<'PUBLIC' | 'DASHBOARD'>('PUBLIC');
 
-  const loadPublicBootstrap = useCallback(async () => {
-    try {
-      setPublicError(null);
-      const res = await fetch('/api/public/bootstrap');
-      const data = await res.json();
-      if (!res.ok) {
-        throw new Error(data.error || 'Failed to load ILM platform data.');
-      }
-      setBootstrapData(data);
-    } catch (err: any) {
-      setPublicError(
-        err.message || 'Unable to connect to the ILM platform server.'
+  
+const loadPublicBootstrap = useCallback(async () => {
+  try {
+    setPublicError(null);
+
+    const res = await fetch('/api/public/bootstrap', {
+      headers: {
+        Accept: 'application/json',
+      },
+    });
+
+    const contentType = res.headers.get('content-type') || '';
+
+    if (!contentType.includes('application/json')) {
+      const responseText = await res.text();
+
+      console.error(
+        'Bootstrap API returned non-JSON:',
+        res.status,
+        responseText.slice(0, 300)
       );
-    } finally {
+
+      throw new Error(
+        `Server returned a non-JSON response (HTTP ${res.status}). Check the API route and deployment.`
+      );
+    }
+
+    const data = await res.json();
+
+    if (!res.ok) {
+      throw new Error(
+        data?.error || `Failed to load ILM data (HTTP ${res.status}).`
+      );
+    }
+
+    setBootstrapData(data);
+  } catch (err: unknown) {
+    const message =
+      err instanceof Error
+        ? err.message
+        : 'Unable to connect to the ILM platform server.';
+
+    console.error('ILM bootstrap error:', message);
+    setPublicError(message);
+  } finally {
+    setLoadingPublic(false);
+  }
+}, []);
+
       setLoadingPublic(false);
     }
   }, []);

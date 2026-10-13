@@ -2473,8 +2473,6 @@ const ALLOWED_EXTENSIONS = new Set([
 
 const IMAGE_EXTENSIONS = new Set(['.jpg', '.jpeg', '.png', '.webp', '.gif']);
 const IMGBB_API_KEY = process.env.IMGBB_API_KEY;
-
-
 async function uploadToImgBB(
   base64Clean: string,
   name: string
