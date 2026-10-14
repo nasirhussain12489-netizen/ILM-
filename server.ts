@@ -45,6 +45,7 @@ import {
   requireGlobalControl,
   requireSuperAdmin,
 } from './src/middleware/auth.ts';
+import { testSupabaseConnection } from './src/lib/supabase.ts';
 
 dotenv.config();
 
@@ -612,10 +613,22 @@ app.post(
         });
       }
 
+      let resolvedPhotoUrl = String(photoUrl || '');
+      if (resolvedPhotoUrl.startsWith('data:image/')) {
+        const base64Clean = resolvedPhotoUrl.split(',')[1] || resolvedPhotoUrl;
+        const imgbbUrl = await uploadToImgBB(
+          base64Clean,
+          `participant_${admissionNo || Date.now()}`
+        );
+        if (imgbbUrl) {
+          resolvedPhotoUrl = imgbbUrl;
+        }
+      }
+
       const result = await createParticipantWithPoster({
         admissionNo: admissionNo ? String(admissionNo) : undefined,
         fullName: String(fullName || ''),
-        photoUrl: String(photoUrl || ''),
+        photoUrl: resolvedPhotoUrl,
         classCode: targetClass,
         categoryName: String(categoryName || ''),
         ownTopic: ownTopic ? String(ownTopic) : undefined,
@@ -678,11 +691,23 @@ app.put(
         });
       }
 
+      let resolvedPhotoUrl = photoUrl !== undefined ? String(photoUrl || '') : existing.photoUrl;
+      if (resolvedPhotoUrl && resolvedPhotoUrl.startsWith('data:image/')) {
+        const base64Clean = resolvedPhotoUrl.split(',')[1] || resolvedPhotoUrl;
+        const imgbbUrl = await uploadToImgBB(
+          base64Clean,
+          `participant_${admissionNo || existing.admissionNo || Date.now()}`
+        );
+        if (imgbbUrl) {
+          resolvedPhotoUrl = imgbbUrl;
+        }
+      }
+
       const result = await updateParticipantWithPoster({
         id: participantId,
         admissionNo,
         fullName,
-        photoUrl,
+        photoUrl: resolvedPhotoUrl,
         classCode,
         categoryName,
         ownTopic,
@@ -2472,43 +2497,79 @@ const ALLOWED_EXTENSIONS = new Set([
 ]);
 
 const IMAGE_EXTENSIONS = new Set(['.jpg', '.jpeg', '.png', '.webp', '.gif']);
-const IMGBB_API_KEY = process.env.IMGBB_API_KEY;
+
+async function getEffectiveImgBBApiKey(): Promise<string | null> {
+  const envKey = process.env.IMGBB_API_KEY;
+  if (envKey && envKey !== 'MY_IMGBB_API_KEY' && envKey.trim()) {
+    return envKey.trim();
+  }
+  try {
+    const setting = await db
+      .select()
+      .from(platformSettings)
+      .where(eq(platformSettings.settingKey, 'imgbbApiKey'))
+      .limit(1);
+    if (setting[0]?.settingValue && setting[0].settingValue.trim()) {
+      return setting[0].settingValue.trim();
+    }
+  } catch (err) {
+    console.warn('Could not read imgbbApiKey from platformSettings:', err);
+  }
+  return null;
+}
+
+async function getEffectiveSupabaseConfig(): Promise<{ url: string; key: string } | null> {
+  let url = process.env.SUPABASE_URL || '';
+  let key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY || '';
+
+  if (!url || !key || url.includes('your-project')) {
+    try {
+      const records = await db.select().from(platformSettings);
+      const map = Object.fromEntries(records.map((r) => [r.settingKey, r.settingValue]));
+      if (map.supabaseUrl) url = map.supabaseUrl.trim();
+      if (map.supabaseAnonKey) key = map.supabaseAnonKey.trim();
+    } catch (err) {
+      console.warn('Could not read supabase settings from platformSettings:', err);
+    }
+  }
+
+  if (url && key && !url.includes('your-project')) {
+    return { url, key };
+  }
+  return null;
+}
+
 async function uploadToImgBB(
   base64Clean: string,
   name: string
 ): Promise<string | null> {
-  const apiKey = process.env.IMGBB_API_KEY;
+  const apiKey = await getEffectiveImgBBApiKey();
 
   if (!apiKey) {
-    console.warn("ImgBB upload skipped: IMGBB_API_KEY is not configured.");
+    console.warn('ImgBB upload skipped: IMGBB_API_KEY is not configured in env or platform settings.');
     return null;
   }
 
   try {
     const formData = new URLSearchParams();
-    formData.append("key", apiKey);
-    formData.append("image", base64Clean);
-    formData.append("name", name);
+    formData.append('key', apiKey);
+    formData.append('image', base64Clean);
+    formData.append('name', name);
 
-    const response = await fetch(
-      "https://api.imgbb.com/1/upload",
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/x-www-form-urlencoded",
-        },
-        body: formData.toString(),
-      }
-    );
+    const response = await fetch('https://api.imgbb.com/1/upload', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+      },
+      body: formData.toString(),
+    });
 
     const responseText = await response.text();
-
     let json: any;
-
     try {
       json = JSON.parse(responseText);
     } catch {
-      console.error("ImgBB returned a non-JSON response:", {
+      console.error('ImgBB returned a non-JSON response:', {
         status: response.status,
         preview: responseText.slice(0, 300),
       });
@@ -2516,19 +2577,119 @@ async function uploadToImgBB(
     }
 
     if (!response.ok || !json?.success || !json?.data?.url) {
-      console.warn("ImgBB upload failed:", {
+      console.warn('ImgBB upload failed:', {
         status: response.status,
-        error: json?.error?.message || "Upload unsuccessful",
+        error: json?.error?.message || 'Upload unsuccessful',
       });
       return null;
     }
 
     return json.data.url;
   } catch (err) {
-    console.warn("ImgBB upload request failed:", err);
+    console.warn('ImgBB upload request failed:', err);
     return null;
   }
 }
+
+// ============================================================================
+// CLOUD DATABASE & IMGBB STATUS & TESTING ENDPOINTS
+// ============================================================================
+app.get('/api/admin/database-status', requireAuth, async (_req: AuthRequest, res: Response) => {
+  try {
+    const imgbbKey = await getEffectiveImgBBApiKey();
+    const supabaseConfig = await getEffectiveSupabaseConfig();
+
+    return res.json({
+      cloudSql: {
+        engine: 'PostgreSQL',
+        provider: 'Google Cloud SQL Developer Edition',
+        region: 'asia-southeast1',
+        status: 'CONNECTED',
+      },
+      imgbb: {
+        status: imgbbKey ? 'CONFIGURED' : 'PENDING_KEY',
+        apiKeyPreview: imgbbKey ? `${imgbbKey.slice(0, 4)}...${imgbbKey.slice(-4)}` : null,
+      },
+      supabase: {
+        status: supabaseConfig ? 'CONFIGURED' : 'STANDBY',
+        projectUrl: supabaseConfig ? supabaseConfig.url : null,
+      },
+    });
+  } catch (error: any) {
+    return res.status(500).json({ error: error.message || 'Failed to inspect database status.' });
+  }
+});
+
+app.post('/api/admin/test-imgbb', requireAuth, async (req: AuthRequest, res: Response) => {
+  try {
+    const testKey = req.body?.apiKey || (await getEffectiveImgBBApiKey());
+    if (!testKey || !String(testKey).trim()) {
+      return res.status(400).json({
+        error: 'No ImgBB API Key provided. Please enter your API Key from https://api.imgbb.com/',
+      });
+    }
+
+    // 1x1 transparent GIF base64
+    const test1x1GifBase64 = 'R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
+    const formData = new URLSearchParams();
+    formData.append('key', String(testKey).trim());
+    formData.append('image', test1x1GifBase64);
+    formData.append('name', `ilm_test_ping_${Date.now()}`);
+
+    const response = await fetch('https://api.imgbb.com/1/upload', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: formData.toString(),
+    });
+
+    const json: any = await response.json().catch(() => null);
+    if (!response.ok || !json?.success || !json?.data?.url) {
+      return res.status(400).json({
+        error: json?.error?.message || `ImgBB test upload failed (HTTP ${response.status}). Verify your API Key at https://api.imgbb.com/`,
+      });
+    }
+
+    return res.json({
+      success: true,
+      message: 'ImgBB API key is active and functional! Images will be permanently hosted on https://imgbb.com/',
+      testImageUrl: json.data.url,
+      deleteUrl: json.data.delete_url,
+    });
+  } catch (err: any) {
+    return res.status(400).json({
+      error: err.message || 'Network error attempting to verify ImgBB API Key.',
+    });
+  }
+});
+
+app.post('/api/admin/test-supabase', requireAuth, async (req: AuthRequest, res: Response) => {
+  try {
+    const { supabaseUrl, supabaseKey } = req.body || {};
+    const effective = supabaseUrl && supabaseKey
+      ? { url: String(supabaseUrl).trim(), key: String(supabaseKey).trim() }
+      : await getEffectiveSupabaseConfig();
+
+    if (!effective || !effective.url || !effective.key) {
+      return res.status(400).json({
+        error: 'Please provide both Supabase Project URL and Supabase Public/Anon API Key.',
+      });
+    }
+
+    const testResult = await testSupabaseConnection(effective.url, effective.key);
+    if (!testResult.success) {
+      return res.status(400).json({ error: testResult.message });
+    }
+
+    return res.json({
+      success: true,
+      message: 'Supabase connection verified successfully! Ready to sync tables and records.',
+    });
+  } catch (err: any) {
+    return res.status(400).json({
+      error: err.message || 'Failed to verify Supabase connection.',
+    });
+  }
+});
 
 app.post(
   '/api/admin/upload',

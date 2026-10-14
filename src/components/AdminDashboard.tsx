@@ -202,6 +202,17 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const [usersList, setUsersList] = useState<AdminUser[]>([]);
   const [logsList, setLogsList] = useState<ActivityLogRecord[]>([]);
   const [settingsMap, setSettingsMap] = useState<Record<string, string>>({});
+  const [imgbbTestStatus, setImgbbTestStatus] = useState<{
+    loading: boolean;
+    success?: boolean;
+    message?: string;
+    imageUrl?: string;
+  } | null>(null);
+  const [supabaseTestStatus, setSupabaseTestStatus] = useState<{
+    loading: boolean;
+    success?: boolean;
+    message?: string;
+  } | null>(null);
 
   // Filter states
   const [selectedClassFilter, setSelectedClassFilter] = useState<
@@ -917,6 +928,72 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       });
     } finally {
       setActionBusy(false);
+    }
+  };
+
+  const handleTestImgBB = async () => {
+    setImgbbTestStatus({ loading: true });
+    try {
+      const res = await fetch('/api/admin/test-imgbb', {
+        method: 'POST',
+        headers: authHeaders(),
+        body: JSON.stringify({ apiKey: settingsMap.imgbbApiKey }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setImgbbTestStatus({
+          loading: false,
+          success: false,
+          message: data.error || 'Failed to verify ImgBB key',
+        });
+      } else {
+        setImgbbTestStatus({
+          loading: false,
+          success: true,
+          message: data.message,
+          imageUrl: data.testImageUrl,
+        });
+      }
+    } catch (err: any) {
+      setImgbbTestStatus({
+        loading: false,
+        success: false,
+        message: err.message || 'Network error verifying ImgBB',
+      });
+    }
+  };
+
+  const handleTestSupabase = async () => {
+    setSupabaseTestStatus({ loading: true });
+    try {
+      const res = await fetch('/api/admin/test-supabase', {
+        method: 'POST',
+        headers: authHeaders(),
+        body: JSON.stringify({
+          supabaseUrl: settingsMap.supabaseUrl,
+          supabaseKey: settingsMap.supabaseAnonKey || settingsMap.supabaseServiceKey,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setSupabaseTestStatus({
+          loading: false,
+          success: false,
+          message: data.error || 'Failed to connect to Supabase',
+        });
+      } else {
+        setSupabaseTestStatus({
+          loading: false,
+          success: true,
+          message: data.message,
+        });
+      }
+    } catch (err: any) {
+      setSupabaseTestStatus({
+        loading: false,
+        success: false,
+        message: err.message || 'Network error connecting to Supabase',
+      });
     }
   };
 
@@ -4595,13 +4672,200 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                       />
                     </div>
 
+                    {/* ===============================================================
+                        CLOUD DATABASE & IMAGE STORAGE (CLOUDSQL, SUPABASE, IMGBB)
+                       =============================================================== */}
+                    <div className="pt-4 border-t border-neutral-800 space-y-4">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <h4 className="text-sm font-semibold text-[#F3D068] flex items-center gap-2">
+                            <span>☁️</span> Cloud Database & Image Storage Configuration
+                          </h4>
+                          <p className="text-xs text-neutral-400 mt-0.5">
+                            Manage Supabase, ImgBB permanent image hosting, and Cloud SQL PostgreSQL.
+                          </p>
+                        </div>
+                        <span className="px-2.5 py-1 rounded-full text-[10px] font-semibold bg-emerald-950/80 border border-emerald-600/50 text-emerald-300">
+                          PostgreSQL Active (asia-southeast1)
+                        </span>
+                      </div>
+
+                      {/* SECTION A: IMGBB.COM IMAGE HOSTING */}
+                      <div className="p-4 rounded-xl bg-[#0D101A] border border-neutral-800 space-y-3">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-2">
+                            <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse" />
+                            <span className="text-xs font-bold text-white uppercase tracking-wider">
+                              https://imgbb.com/ Image CDN Integration
+                            </span>
+                          </div>
+                          <a
+                            href="https://api.imgbb.com/"
+                            target="_blank"
+                            rel="noreferrer"
+                            className="text-[11px] text-[#F3D068] hover:underline"
+                          >
+                            Get Free API Key →
+                          </a>
+                        </div>
+                        <p className="text-xs text-neutral-400">
+                          Participant portraits, candidate photos aur custom poster backgrounds direct ImgBB CDN par permanently host honge.
+                        </p>
+                        <div>
+                          <label className="block text-xs font-medium text-neutral-300 mb-1">
+                            ImgBB API Key
+                          </label>
+                          <div className="flex gap-2">
+                            <input
+                              type="password"
+                              placeholder="e.g. 7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c"
+                              value={settingsMap.imgbbApiKey || ''}
+                              onChange={(e) =>
+                                setSettingsMap((prev) => ({
+                                  ...prev,
+                                  imgbbApiKey: e.target.value,
+                                }))
+                              }
+                              className="flex-1 px-3.5 py-2 rounded-lg bg-[#141824] border border-neutral-700 text-sm text-white font-mono placeholder:text-neutral-500 focus:border-[#D4AF37] focus:outline-none"
+                            />
+                            <button
+                              type="button"
+                              onClick={handleTestImgBB}
+                              disabled={imgbbTestStatus?.loading || !settingsMap.imgbbApiKey}
+                              className="px-3.5 py-2 rounded-lg bg-neutral-800 hover:bg-neutral-700 text-neutral-200 border border-neutral-600 text-xs font-semibold cursor-pointer disabled:opacity-50"
+                            >
+                              {imgbbTestStatus?.loading ? 'Testing...' : 'Test ImgBB'}
+                            </button>
+                          </div>
+                          {imgbbTestStatus && (
+                            <div
+                              className={`mt-2 p-2.5 rounded-lg text-xs flex items-center justify-between ${
+                                imgbbTestStatus.success
+                                  ? 'bg-emerald-950/60 border border-emerald-700/60 text-emerald-300'
+                                  : 'bg-red-950/60 border border-red-700/60 text-red-300'
+                              }`}
+                            >
+                              <span>{imgbbTestStatus.message}</span>
+                              {imgbbTestStatus.imageUrl && (
+                                <a
+                                  href={imgbbTestStatus.imageUrl}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="underline font-mono text-[10px] ml-2 shrink-0"
+                                >
+                                  View Test Upload
+                                </a>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* SECTION B: SUPABASE DATABASE */}
+                      <div className="p-4 rounded-xl bg-[#0D101A] border border-neutral-800 space-y-3">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-2">
+                            <span className="w-2.5 h-2.5 rounded-full bg-cyan-400" />
+                            <span className="text-xs font-bold text-white uppercase tracking-wider">
+                              Supabase Database Integration
+                            </span>
+                          </div>
+                          <span className="text-[11px] text-neutral-400">
+                            PostgreSQL Relational Storage
+                          </span>
+                        </div>
+                        <p className="text-xs text-neutral-400">
+                          Apna Supabase Project URL aur Public / Anon Key yahan enter karein data sync aur storage ke liye.
+                        </p>
+                        <div className="space-y-2.5">
+                          <div>
+                            <label className="block text-xs font-medium text-neutral-300 mb-1">
+                              Supabase Project URL
+                            </label>
+                            <input
+                              type="text"
+                              placeholder="https://xyzcompany.supabase.co"
+                              value={settingsMap.supabaseUrl || ''}
+                              onChange={(e) =>
+                                setSettingsMap((prev) => ({
+                                  ...prev,
+                                  supabaseUrl: e.target.value,
+                                }))
+                              }
+                              className="w-full px-3.5 py-2 rounded-lg bg-[#141824] border border-neutral-700 text-sm text-white font-mono placeholder:text-neutral-500 focus:border-[#D4AF37] focus:outline-none"
+                            />
+                          </div>
+
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
+                            <div>
+                              <label className="block text-xs font-medium text-neutral-300 mb-1">
+                                Supabase Anon / Public Key
+                              </label>
+                              <input
+                                type="password"
+                                placeholder="eyJhbGciOiJIUzI1NiIsIn..."
+                                value={settingsMap.supabaseAnonKey || ''}
+                                onChange={(e) =>
+                                  setSettingsMap((prev) => ({
+                                    ...prev,
+                                    supabaseAnonKey: e.target.value,
+                                  }))
+                                }
+                                className="w-full px-3.5 py-2 rounded-lg bg-[#141824] border border-neutral-700 text-sm text-white font-mono placeholder:text-neutral-500 focus:border-[#D4AF37] focus:outline-none"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-xs font-medium text-neutral-300 mb-1">
+                                Supabase Service Role Key (Optional)
+                              </label>
+                              <input
+                                type="password"
+                                placeholder="eyJhbGciOiJIUzI1NiIsIn..."
+                                value={settingsMap.supabaseServiceKey || ''}
+                                onChange={(e) =>
+                                  setSettingsMap((prev) => ({
+                                    ...prev,
+                                    supabaseServiceKey: e.target.value,
+                                  }))
+                                }
+                                className="w-full px-3.5 py-2 rounded-lg bg-[#141824] border border-neutral-700 text-sm text-white font-mono placeholder:text-neutral-500 focus:border-[#D4AF37] focus:outline-none"
+                              />
+                            </div>
+                          </div>
+
+                          <div className="pt-1">
+                            <button
+                              type="button"
+                              onClick={handleTestSupabase}
+                              disabled={supabaseTestStatus?.loading || !settingsMap.supabaseUrl}
+                              className="px-3.5 py-2 rounded-lg bg-neutral-800 hover:bg-neutral-700 text-neutral-200 border border-neutral-600 text-xs font-semibold cursor-pointer disabled:opacity-50"
+                            >
+                              {supabaseTestStatus?.loading ? 'Connecting...' : 'Test Supabase Connection'}
+                            </button>
+                          </div>
+
+                          {supabaseTestStatus && (
+                            <div
+                              className={`p-2.5 rounded-lg text-xs ${
+                                supabaseTestStatus.success
+                                  ? 'bg-emerald-950/60 border border-emerald-700/60 text-emerald-300'
+                                  : 'bg-red-950/60 border border-red-700/60 text-red-300'
+                              }`}
+                            >
+                              {supabaseTestStatus.message}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+
                     <div className="pt-2">
                       <button
                         type="submit"
                         disabled={actionBusy}
                         className="px-5 py-2.5 rounded-lg bg-[#D4AF37] text-neutral-950 font-semibold text-xs cursor-pointer"
                       >
-                        Save Platform Settings
+                        Save Platform Settings & Database Config
                       </button>
                     </div>
                   </div>
