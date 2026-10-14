@@ -2530,8 +2530,6 @@ async function uploadToImgBB(
   }
 }
 
-}
-
 app.post(
   '/api/admin/upload',
   requireAuth,
@@ -2615,7 +2613,7 @@ app.post(
 async function startServer() {
   if (process.env.NODE_ENV !== 'production') {
     const vite = await createViteServer({
-      server: { middlewareMode: true },
+      server: { middlewareMode: true, hmr: false },
       appType: 'spa',
     });
     app.use(vite.middlewares);
@@ -2627,9 +2625,20 @@ async function startServer() {
     });
   }
 
-  app.listen(PORT, '0.0.0.0', () => {
+  const server = app.listen(PORT, '0.0.0.0', () => {
+    console.log(`  ➜  Local:   http://localhost:${PORT}/`);
+    console.log(`  ➜  Network: http://0.0.0.0:${PORT}/`);
     console.log(`ILM — Integrated Learning Master server running on port ${PORT}`);
   });
+
+  const cleanup = () => {
+    server.close(() => {
+      process.exit(0);
+    });
+  };
+
+  process.on('SIGTERM', cleanup);
+  process.on('SIGINT', cleanup);
 }
 
 startServer();

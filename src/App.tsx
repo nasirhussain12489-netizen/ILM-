@@ -81,10 +81,6 @@ const loadPublicBootstrap = useCallback(async () => {
   }
 }, []);
 
-      setLoadingPublic(false);
-    }
-  }, []);
-
   useEffect(() => {
     loadPublicBootstrap();
   }, [loadPublicBootstrap]);
