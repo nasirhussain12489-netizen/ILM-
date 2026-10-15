@@ -9,6 +9,27 @@ import {
 import { AdminUser } from '../types.ts';
 import { IlmLogo } from './IlmLogo.tsx';
 
+async function readApiResponse(res: Response): Promise<any> {
+  const raw = await res.text();
+
+  let data: any;
+
+  try {
+    data = raw ? JSON.parse(raw) : {};
+  } catch {
+    data = {
+      error: `API returned non-JSON response (HTTP ${res.status}): ${raw.slice(0, 250)}`,
+    };
+  }
+
+  if (data && typeof data.error !== 'string' && data.error) {
+    data.error =
+      data.error.message || JSON.stringify(data.error);
+  }
+
+  return data;
+}
+
 interface AdminLoginModalProps {
   onClose: () => void;
   onLoginSuccess: (token: string, user: AdminUser) => void;
@@ -38,7 +59,7 @@ export const AdminLoginModal: React.FC<AdminLoginModalProps> = ({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email: email.trim(), password }),
       });
-      const data = await res.json();
+      const data = await readApiResponse(res);
       if (!res.ok) {
         throw new Error(data.error || 'Invalid Gmail or password.');
       }
@@ -63,7 +84,7 @@ export const AdminLoginModal: React.FC<AdminLoginModalProps> = ({
           Authorization: `Bearer ${idToken}`,
         },
       });
-      const data = await res.json();
+      const data = await readApiResponse(res);
       if (!res.ok) {
         throw new Error(
           data.error ||
@@ -96,7 +117,7 @@ export const AdminLoginModal: React.FC<AdminLoginModalProps> = ({
           newPassword,
         }),
       });
-      const data = await res.json();
+      const data = await readApiResponse(res);
       if (!res.ok) {
         throw new Error(data.error || 'Password reset failed.');
       }
