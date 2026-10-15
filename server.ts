@@ -460,6 +460,18 @@ app.get(
         for (const s of allSettings) {
           settingsMap[s.settingKey] = s.settingValue;
         }
+        if (!settingsMap.supabaseUrl && process.env.SUPABASE_URL) {
+          settingsMap.supabaseUrl = process.env.SUPABASE_URL;
+        }
+        if (!settingsMap.supabaseAnonKey && process.env.SUPABASE_ANON_KEY) {
+          settingsMap.supabaseAnonKey = process.env.SUPABASE_ANON_KEY;
+        }
+        if (!settingsMap.supabaseServiceKey && process.env.SUPABASE_SERVICE_ROLE_KEY) {
+          settingsMap.supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+        }
+        if (!settingsMap.imgbbApiKey && process.env.IMGBB_API_KEY) {
+          settingsMap.imgbbApiKey = process.env.IMGBB_API_KEY;
+        }
 
         return res.json({
           user: admin,
@@ -2523,15 +2535,17 @@ async function getEffectiveSupabaseConfig(): Promise<{ url: string; key: string 
   let url = process.env.SUPABASE_URL || '';
   let key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY || '';
 
-  if (!url || !key || url.includes('your-project')) {
-    try {
-      const records = await db.select().from(platformSettings);
-      const map = Object.fromEntries(records.map((r) => [r.settingKey, r.settingValue]));
-      if (map.supabaseUrl) url = map.supabaseUrl.trim();
-      if (map.supabaseAnonKey) key = map.supabaseAnonKey.trim();
-    } catch (err) {
-      console.warn('Could not read supabase settings from platformSettings:', err);
+  try {
+    const records = await db.select().from(platformSettings);
+    const map = Object.fromEntries(records.map((r) => [r.settingKey, r.settingValue]));
+    if (map.supabaseUrl && map.supabaseUrl.trim()) url = map.supabaseUrl.trim();
+    if (map.supabaseServiceKey && map.supabaseServiceKey.trim()) {
+      key = map.supabaseServiceKey.trim();
+    } else if (map.supabaseAnonKey && map.supabaseAnonKey.trim()) {
+      key = map.supabaseAnonKey.trim();
     }
+  } catch (err) {
+    console.warn('Could not read supabase settings from platformSettings:', err);
   }
 
   if (url && key && !url.includes('your-project')) {
@@ -2899,44 +2913,39 @@ CREATE TABLE IF NOT EXISTS platform_settings (
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- Enable Row Level Security (RLS)
-ALTER TABLE users ENABLE ROW LEVEL SECURITY;
-ALTER TABLE classes ENABLE ROW LEVEL SECURITY;
-ALTER TABLE students ENABLE ROW LEVEL SECURITY;
-ALTER TABLE class_officers ENABLE ROW LEVEL SECURITY;
-ALTER TABLE competition_categories ENABLE ROW LEVEL SECURITY;
-ALTER TABLE participants ENABLE ROW LEVEL SECURITY;
-ALTER TABLE posters ENABLE ROW LEVEL SECURITY;
-ALTER TABLE feed_posts ENABLE ROW LEVEL SECURITY;
-ALTER TABLE weekly_results ENABLE ROW LEVEL SECURITY;
-ALTER TABLE library_resources ENABLE ROW LEVEL SECURITY;
-ALTER TABLE activity_logs ENABLE ROW LEVEL SECURITY;
-ALTER TABLE platform_settings ENABLE ROW LEVEL SECURITY;
+-- Ensure Row Level Security (RLS) is disabled so both Anon Key and backend can read and write smoothly:
+ALTER TABLE classes DISABLE ROW LEVEL SECURITY;
+ALTER TABLE students DISABLE ROW LEVEL SECURITY;
+ALTER TABLE class_officers DISABLE ROW LEVEL SECURITY;
+ALTER TABLE competition_categories DISABLE ROW LEVEL SECURITY;
+ALTER TABLE participants DISABLE ROW LEVEL SECURITY;
+ALTER TABLE posters DISABLE ROW LEVEL SECURITY;
+ALTER TABLE feed_posts DISABLE ROW LEVEL SECURITY;
+ALTER TABLE weekly_results DISABLE ROW LEVEL SECURITY;
+ALTER TABLE library_resources DISABLE ROW LEVEL SECURITY;
+ALTER TABLE activity_logs DISABLE ROW LEVEL SECURITY;
+ALTER TABLE platform_settings DISABLE ROW LEVEL SECURITY;
+ALTER TABLE users DISABLE ROW LEVEL SECURITY;
 
--- Allow public read policy for tables
+-- Fallback permissive policies
 DO $$
 BEGIN
-  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'Public Read Classes') THEN
-    CREATE POLICY "Public Read Classes" ON classes FOR SELECT USING (true);
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'Allow All Classes') THEN
+    CREATE POLICY "Allow All Classes" ON classes FOR ALL USING (true) WITH CHECK (true);
   END IF;
-  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'Public Read Categories') THEN
-    CREATE POLICY "Public Read Categories" ON competition_categories FOR SELECT USING (true);
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'Allow All Categories') THEN
+    CREATE POLICY "Allow All Categories" ON competition_categories FOR ALL USING (true) WITH CHECK (true);
   END IF;
-  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'Public Read Participants') THEN
-    CREATE POLICY "Public Read Participants" ON participants FOR SELECT USING (true);
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'Allow All Participants') THEN
+    CREATE POLICY "Allow All Participants" ON participants FOR ALL USING (true) WITH CHECK (true);
   END IF;
-  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'Public Read Posters') THEN
-    CREATE POLICY "Public Read Posters" ON posters FOR SELECT USING (true);
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'Allow All Posters') THEN
+    CREATE POLICY "Allow All Posters" ON posters FOR ALL USING (true) WITH CHECK (true);
   END IF;
-  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'Public Read Feed') THEN
-    CREATE POLICY "Public Read Feed" ON feed_posts FOR SELECT USING (true);
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'Allow All Settings') THEN
+    CREATE POLICY "Allow All Settings" ON platform_settings FOR ALL USING (true) WITH CHECK (true);
   END IF;
-  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'Public Read Library') THEN
-    CREATE POLICY "Public Read Library" ON library_resources FOR SELECT USING (true);
-  END IF;
-  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'Public Read Settings') THEN
-    CREATE POLICY "Public Read Settings" ON platform_settings FOR SELECT USING (true);
-  END IF;
+EXCEPTION WHEN OTHERS THEN NULL;
 END $$;
 `;
 
