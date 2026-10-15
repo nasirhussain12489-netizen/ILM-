@@ -2,6 +2,7 @@ import express, { Request, Response } from 'express';
 import fs from 'fs';
 import path from 'path';
 import crypto from 'crypto';
+import https from 'https';
 import * as dotenv from 'dotenv';
 import { and, asc, desc, eq } from 'drizzle-orm';
 import { createServer as createViteServer } from 'vite';
@@ -2539,6 +2540,85 @@ async function getEffectiveSupabaseConfig(): Promise<{ url: string; key: string 
   return null;
 }
 
+function sendImgBBUploadRequest(
+  apiKey: string,
+  base64Image: string,
+  name: string
+): Promise<{ statusCode: number; success: boolean; data?: any; error?: string }> {
+  return new Promise((resolve) => {
+    const postData = new URLSearchParams({
+      image: base64Image,
+      name: name,
+    }).toString();
+
+    const req = https.request(
+      {
+        hostname: 'api.imgbb.com',
+        port: 443,
+        path: `/1/upload?key=${encodeURIComponent(apiKey.trim())}`,
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+          'Content-Length': Buffer.byteLength(postData),
+          'User-Agent': 'curl/7.88.1',
+          'Accept': 'application/json',
+        },
+        timeout: 15000,
+      },
+      (res) => {
+        let rawData = '';
+        res.on('data', (chunk) => {
+          rawData += chunk;
+        });
+        res.on('end', () => {
+          try {
+            const parsed = JSON.parse(rawData);
+            if (res.statusCode === 200 && parsed?.success && parsed?.data?.url) {
+              resolve({
+                statusCode: 200,
+                success: true,
+                data: parsed.data,
+              });
+            } else {
+              resolve({
+                statusCode: res.statusCode || 400,
+                success: false,
+                error: parsed?.error?.message || `ImgBB rejected upload (code ${res.statusCode})`,
+              });
+            }
+          } catch {
+            resolve({
+              statusCode: res.statusCode || 500,
+              success: false,
+              error: 'Invalid response received from ImgBB API.',
+            });
+          }
+        });
+      }
+    );
+
+    req.on('timeout', () => {
+      req.destroy();
+      resolve({
+        statusCode: 408,
+        success: false,
+        error: 'Upload to api.imgbb.com timed out after 20 seconds.',
+      });
+    });
+
+    req.on('error', (err) => {
+      resolve({
+        statusCode: 500,
+        success: false,
+        error: err.message || 'Network error reaching api.imgbb.com',
+      });
+    });
+
+    req.write(postData);
+    req.end();
+  });
+}
+
 async function uploadToImgBB(
   base64Clean: string,
   name: string
@@ -2551,40 +2631,12 @@ async function uploadToImgBB(
   }
 
   try {
-    const formData = new URLSearchParams();
-    formData.append('key', apiKey);
-    formData.append('image', base64Clean);
-    formData.append('name', name);
-
-    const response = await fetch('https://api.imgbb.com/1/upload', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/x-www-form-urlencoded',
-      },
-      body: formData.toString(),
-    });
-
-    const responseText = await response.text();
-    let json: any;
-    try {
-      json = JSON.parse(responseText);
-    } catch {
-      console.error('ImgBB returned a non-JSON response:', {
-        status: response.status,
-        preview: responseText.slice(0, 300),
-      });
-      return null;
+    const result = await sendImgBBUploadRequest(apiKey, base64Clean, name);
+    if (result.success && result.data?.url) {
+      return result.data.url;
     }
-
-    if (!response.ok || !json?.success || !json?.data?.url) {
-      console.warn('ImgBB upload failed:', {
-        status: response.status,
-        error: json?.error?.message || 'Upload unsuccessful',
-      });
-      return null;
-    }
-
-    return json.data.url;
+    console.warn('ImgBB upload failed:', result.error);
+    return null;
   } catch (err) {
     console.warn('ImgBB upload request failed:', err);
     return null;
@@ -2629,31 +2681,25 @@ app.post('/api/admin/test-imgbb', requireAuth, async (req: AuthRequest, res: Res
       });
     }
 
-    // 1x1 transparent GIF base64
-    const test1x1GifBase64 = 'R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
-    const formData = new URLSearchParams();
-    formData.append('key', String(testKey).trim());
-    formData.append('image', test1x1GifBase64);
-    formData.append('name', `ilm_test_ping_${Date.now()}`);
+    // 1x1 transparent PNG base64
+    const test1x1PngBase64 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=';
+    const result = await sendImgBBUploadRequest(
+      String(testKey).trim(),
+      test1x1PngBase64,
+      `ilm_test_ping_${Date.now()}`
+    );
 
-    const response = await fetch('https://api.imgbb.com/1/upload', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: formData.toString(),
-    });
-
-    const json: any = await response.json().catch(() => null);
-    if (!response.ok || !json?.success || !json?.data?.url) {
-      return res.status(400).json({
-        error: json?.error?.message || `ImgBB test upload failed (HTTP ${response.status}). Verify your API Key at https://api.imgbb.com/`,
+    if (result.success && result.data?.url) {
+      return res.json({
+        success: true,
+        message: 'ImgBB API key is active and functional! Images will be permanently hosted on https://imgbb.com/',
+        testImageUrl: result.data.url,
+        deleteUrl: result.data.delete_url,
       });
     }
 
-    return res.json({
-      success: true,
-      message: 'ImgBB API key is active and functional! Images will be permanently hosted on https://imgbb.com/',
-      testImageUrl: json.data.url,
-      deleteUrl: json.data.delete_url,
+    return res.status(400).json({
+      error: result.error || 'ImgBB test upload failed. Verify your API Key at https://api.imgbb.com/',
     });
   } catch (err: any) {
     return res.status(400).json({

@@ -1009,6 +1009,29 @@ export async function ensureRequestedAdminCredentials() {
       await regeneratePosterForClassCategory(clsCode, 'All Categories');
     }
 
+    // 6. Ensure default ImgBB API key is initialized in platformSettings if not set
+    const existingImgbb = await db
+      .select()
+      .from(platformSettings)
+      .where(eq(platformSettings.settingKey, 'imgbbApiKey'))
+      .limit(1);
+    if (!existingImgbb.length || !existingImgbb[0].settingValue?.trim()) {
+      await db
+        .insert(platformSettings)
+        .values({
+          settingKey: 'imgbbApiKey',
+          settingValue: '9551c6c91a49c0c4b17819b26554d812',
+          updatedAt: new Date(),
+        })
+        .onConflictDoUpdate({
+          target: platformSettings.settingKey,
+          set: {
+            settingValue: '9551c6c91a49c0c4b17819b26554d812',
+            updatedAt: new Date(),
+          },
+        });
+    }
+
     credentialsSynced = true;
   } catch (error) {
     console.error('Error syncing requested admin credentials:', error);
