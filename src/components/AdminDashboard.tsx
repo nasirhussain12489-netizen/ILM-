@@ -213,6 +213,12 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     success?: boolean;
     message?: string;
   } | null>(null);
+  const [supabaseSyncStatus, setSupabaseSyncStatus] = useState<{
+    loading: boolean;
+    success?: boolean;
+    message?: string;
+  } | null>(null);
+  const [copiedSql, setCopiedSql] = useState(false);
 
   // Filter states
   const [selectedClassFilter, setSelectedClassFilter] = useState<
@@ -993,6 +999,52 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         loading: false,
         success: false,
         message: err.message || 'Network error connecting to Supabase',
+      });
+    }
+  };
+
+  const handleCopySupabaseSql = async () => {
+    try {
+      const res = await fetch('/api/admin/supabase-schema-sql', {
+        headers: authHeaders(),
+      });
+      const data = await res.json();
+      if (data.sql) {
+        await navigator.clipboard.writeText(data.sql);
+        setCopiedSql(true);
+        setTimeout(() => setCopiedSql(false), 3500);
+      }
+    } catch {
+      alert('Could not copy SQL script. Please check your connection.');
+    }
+  };
+
+  const handleSyncToSupabase = async () => {
+    setSupabaseSyncStatus({ loading: true });
+    try {
+      const res = await fetch('/api/admin/sync-to-supabase', {
+        method: 'POST',
+        headers: authHeaders(),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setSupabaseSyncStatus({
+          loading: false,
+          success: false,
+          message: data.error || 'Failed to sync data to Supabase.',
+        });
+      } else {
+        setSupabaseSyncStatus({
+          loading: false,
+          success: true,
+          message: data.message,
+        });
+      }
+    } catch (err: any) {
+      setSupabaseSyncStatus({
+        loading: false,
+        success: false,
+        message: err.message || 'Network error syncing to Supabase.',
       });
     }
   };
@@ -4833,14 +4885,31 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                             </div>
                           </div>
 
-                          <div className="pt-1">
+                          <div className="pt-2 flex flex-wrap items-center gap-2.5">
                             <button
                               type="button"
                               onClick={handleTestSupabase}
                               disabled={supabaseTestStatus?.loading || !settingsMap.supabaseUrl}
                               className="px-3.5 py-2 rounded-lg bg-neutral-800 hover:bg-neutral-700 text-neutral-200 border border-neutral-600 text-xs font-semibold cursor-pointer disabled:opacity-50"
                             >
-                              {supabaseTestStatus?.loading ? 'Connecting...' : 'Test Supabase Connection'}
+                              {supabaseTestStatus?.loading ? 'Connecting...' : '1. Test Connection'}
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={handleCopySupabaseSql}
+                              className="px-3.5 py-2 rounded-lg bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 border border-amber-500/30 text-xs font-semibold cursor-pointer transition-colors"
+                            >
+                              {copiedSql ? '✓ SQL Copied to Clipboard!' : '2. Copy Supabase SQL (Tables DDL)'}
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={handleSyncToSupabase}
+                              disabled={supabaseSyncStatus?.loading}
+                              className="px-3.5 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold cursor-pointer disabled:opacity-50 shadow-sm transition-colors"
+                            >
+                              {supabaseSyncStatus?.loading ? 'Syncing Records...' : '3. Sync Live Data to Supabase'}
                             </button>
                           </div>
 
@@ -4855,6 +4924,25 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                               {supabaseTestStatus.message}
                             </div>
                           )}
+
+                          {supabaseSyncStatus && (
+                            <div
+                              className={`p-2.5 rounded-lg text-xs ${
+                                supabaseSyncStatus.success
+                                  ? 'bg-emerald-950/60 border border-emerald-700/60 text-emerald-300'
+                                  : 'bg-red-950/60 border border-red-700/60 text-red-300'
+                              }`}
+                            >
+                              {supabaseSyncStatus.message}
+                            </div>
+                          )}
+
+                          <div className="p-3 rounded-lg bg-[#0d1117] border border-neutral-800 text-[11px] text-neutral-400 space-y-1">
+                            <p className="font-semibold text-neutral-300">Supabase me tables dekhne ke 3 simple steps:</p>
+                            <p>1. Supabase Dashboard &rarr; <b>Project Settings &rarr; API</b> se URL aur <code className="text-amber-400">anon public key</code> yahan enter karein.</p>
+                            <p>2. Upar <b>"Copy Supabase SQL"</b> click karein, fir Supabase ke <b>SQL Editor</b> me ja kar Paste karein aur <b>RUN</b> dabayein.</p>
+                            <p>3. Phir <b>"Sync Live Data to Supabase"</b> click karein. Saara data Supabase ke Table Editor me live dikhne lagega!</p>
+                          </div>
                         </div>
                       </div>
                     </div>

@@ -46,7 +46,7 @@ import {
   requireGlobalControl,
   requireSuperAdmin,
 } from './src/middleware/auth.ts';
-import { testSupabaseConnection } from './src/lib/supabase.ts';
+import { getSupabaseClient, testSupabaseConnection } from './src/lib/supabase.ts';
 
 dotenv.config();
 
@@ -2734,6 +2734,314 @@ app.post('/api/admin/test-supabase', requireAuth, async (req: AuthRequest, res: 
     return res.status(400).json({
       error: err.message || 'Failed to verify Supabase connection.',
     });
+  }
+});
+
+const SUPABASE_SCHEMA_SQL = `-- ============================================================================
+-- ILM PLATFORM - SUPABASE POSTGRESQL TABLES DDL SCRIPT
+-- Copy this entire script, open Supabase Dashboard -> "SQL Editor" -> "New query",
+-- Paste it, and click "RUN" (Green button at bottom right).
+-- ============================================================================
+
+CREATE TABLE IF NOT EXISTS users (
+  id SERIAL PRIMARY KEY,
+  uid TEXT NOT NULL UNIQUE,
+  email TEXT NOT NULL UNIQUE,
+  name TEXT NOT NULL,
+  role TEXT NOT NULL,
+  assigned_class TEXT,
+  status TEXT NOT NULL DEFAULT 'ACTIVE',
+  password_hash TEXT,
+  password_plain TEXT,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS classes (
+  id SERIAL PRIMARY KEY,
+  code TEXT NOT NULL UNIQUE,
+  name TEXT NOT NULL,
+  description TEXT NOT NULL,
+  admin_email TEXT,
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS students (
+  id SERIAL PRIMARY KEY,
+  admission_no TEXT NOT NULL UNIQUE,
+  full_name TEXT NOT NULL,
+  class_code TEXT NOT NULL,
+  photo_url TEXT NOT NULL,
+  bio TEXT,
+  created_by_email TEXT,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS class_officers (
+  id SERIAL PRIMARY KEY,
+  class_code TEXT NOT NULL,
+  role_title TEXT NOT NULL,
+  holder_name TEXT NOT NULL,
+  admission_no TEXT,
+  photo_url TEXT NOT NULL,
+  responsibilities TEXT,
+  updated_by_email TEXT,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS competition_categories (
+  id SERIAL PRIMARY KEY,
+  name TEXT NOT NULL UNIQUE,
+  max_participants_per_class INTEGER NOT NULL,
+  description TEXT NOT NULL,
+  display_order INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS participants (
+  id SERIAL PRIMARY KEY,
+  admission_no TEXT,
+  full_name TEXT NOT NULL,
+  photo_url TEXT NOT NULL,
+  class_code TEXT NOT NULL,
+  category_name TEXT NOT NULL,
+  own_topic TEXT,
+  short_description TEXT,
+  publication_status TEXT NOT NULL DEFAULT 'PUBLISHED',
+  created_by_email TEXT,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS posters (
+  id SERIAL PRIMARY KEY,
+  class_code TEXT NOT NULL,
+  category_name TEXT NOT NULL,
+  title TEXT NOT NULL,
+  subtitle TEXT NOT NULL,
+  poster_image_url TEXT NOT NULL,
+  participants_snapshot TEXT NOT NULL,
+  participant_count INTEGER NOT NULL DEFAULT 0,
+  generation_status TEXT NOT NULL DEFAULT 'COMPLETED',
+  generation_error TEXT,
+  publication_status TEXT NOT NULL DEFAULT 'PUBLISHED',
+  is_featured BOOLEAN NOT NULL DEFAULT true,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS feed_posts (
+  id SERIAL PRIMARY KEY,
+  class_code TEXT NOT NULL,
+  title TEXT NOT NULL,
+  caption TEXT NOT NULL,
+  media_url TEXT NOT NULL,
+  media_type TEXT NOT NULL DEFAULT 'PHOTO',
+  status TEXT NOT NULL DEFAULT 'PENDING',
+  rejection_reason TEXT,
+  submitted_by_email TEXT NOT NULL,
+  submitted_by_name TEXT NOT NULL,
+  reviewed_by_email TEXT,
+  reviewed_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS weekly_results (
+  id SERIAL PRIMARY KEY,
+  result_category TEXT NOT NULL,
+  winner_name TEXT NOT NULL,
+  winner_photo_url TEXT NOT NULL,
+  winner_class TEXT NOT NULL,
+  week_label TEXT NOT NULL,
+  result_date TEXT NOT NULL,
+  remarks TEXT,
+  publication_status TEXT NOT NULL DEFAULT 'PUBLISHED',
+  published_by_email TEXT NOT NULL,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS library_resources (
+  id SERIAL PRIMARY KEY,
+  title TEXT NOT NULL,
+  description TEXT NOT NULL,
+  author TEXT NOT NULL,
+  category TEXT NOT NULL,
+  library_scope TEXT NOT NULL,
+  file_url TEXT NOT NULL,
+  file_type TEXT NOT NULL,
+  file_size TEXT NOT NULL,
+  content_preview TEXT,
+  publication_status TEXT NOT NULL DEFAULT 'PUBLISHED',
+  uploaded_by_email TEXT NOT NULL,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS activity_logs (
+  id SERIAL PRIMARY KEY,
+  actor_email TEXT NOT NULL,
+  actor_role TEXT NOT NULL,
+  action TEXT NOT NULL,
+  target_type TEXT NOT NULL,
+  target_id TEXT,
+  class_code TEXT,
+  details TEXT NOT NULL,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS platform_settings (
+  id SERIAL PRIMARY KEY,
+  setting_key TEXT NOT NULL UNIQUE,
+  setting_value TEXT NOT NULL,
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Enable Row Level Security (RLS)
+ALTER TABLE users ENABLE ROW LEVEL SECURITY;
+ALTER TABLE classes ENABLE ROW LEVEL SECURITY;
+ALTER TABLE students ENABLE ROW LEVEL SECURITY;
+ALTER TABLE class_officers ENABLE ROW LEVEL SECURITY;
+ALTER TABLE competition_categories ENABLE ROW LEVEL SECURITY;
+ALTER TABLE participants ENABLE ROW LEVEL SECURITY;
+ALTER TABLE posters ENABLE ROW LEVEL SECURITY;
+ALTER TABLE feed_posts ENABLE ROW LEVEL SECURITY;
+ALTER TABLE weekly_results ENABLE ROW LEVEL SECURITY;
+ALTER TABLE library_resources ENABLE ROW LEVEL SECURITY;
+ALTER TABLE activity_logs ENABLE ROW LEVEL SECURITY;
+ALTER TABLE platform_settings ENABLE ROW LEVEL SECURITY;
+
+-- Allow public read policy for tables
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'Public Read Classes') THEN
+    CREATE POLICY "Public Read Classes" ON classes FOR SELECT USING (true);
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'Public Read Categories') THEN
+    CREATE POLICY "Public Read Categories" ON competition_categories FOR SELECT USING (true);
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'Public Read Participants') THEN
+    CREATE POLICY "Public Read Participants" ON participants FOR SELECT USING (true);
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'Public Read Posters') THEN
+    CREATE POLICY "Public Read Posters" ON posters FOR SELECT USING (true);
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'Public Read Feed') THEN
+    CREATE POLICY "Public Read Feed" ON feed_posts FOR SELECT USING (true);
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'Public Read Library') THEN
+    CREATE POLICY "Public Read Library" ON library_resources FOR SELECT USING (true);
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'Public Read Settings') THEN
+    CREATE POLICY "Public Read Settings" ON platform_settings FOR SELECT USING (true);
+  END IF;
+END $$;
+`;
+
+app.get('/api/admin/supabase-schema-sql', requireAuth, (_req: AuthRequest, res: Response) => {
+  return res.json({ sql: SUPABASE_SCHEMA_SQL });
+});
+
+app.post('/api/admin/sync-to-supabase', requireAuth, requireGlobalControl, async (_req: AuthRequest, res: Response) => {
+  try {
+    const config = await getEffectiveSupabaseConfig();
+    if (!config) {
+      return res.status(400).json({ error: 'Supabase URL or Key not configured. Please enter them in Settings.' });
+    }
+    const client = getSupabaseClient(config.url, config.key);
+    if (!client) {
+      return res.status(400).json({ error: 'Could not connect to Supabase client.' });
+    }
+
+    // Check if classes table exists
+    const testCheck = await client.from('classes').select('id').limit(1);
+    if (testCheck.error) {
+      return res.status(400).json({
+        error: `Supabase me tables abhi nahi bane hain (${testCheck.error.message}). Please pehle SQL Editor me ja kar 'Copy Supabase SQL' wala code RUN karein!`,
+        requiresSchema: true,
+      });
+    }
+
+    // Sync classes
+    const allCls = await db.select().from(classes);
+    for (const c of allCls) {
+      await client.from('classes').upsert({
+        code: c.code,
+        name: c.name,
+        description: c.description,
+        admin_email: c.adminEmail,
+      }, { onConflict: 'code' });
+    }
+
+    // Sync categories
+    const allCats = await db.select().from(competitionCategories);
+    for (const cat of allCats) {
+      await client.from('competition_categories').upsert({
+        name: cat.name,
+        max_participants_per_class: cat.maxParticipantsPerClass,
+        description: cat.description,
+        display_order: cat.displayOrder,
+      }, { onConflict: 'name' });
+    }
+
+    // Sync participants
+    const allParts = await db.select().from(participants);
+    for (const p of allParts) {
+      await client.from('participants').upsert({
+        id: p.id,
+        admission_no: p.admissionNo,
+        full_name: p.fullName,
+        photo_url: p.photoUrl,
+        class_code: p.classCode,
+        category_name: p.categoryName,
+        own_topic: p.ownTopic,
+        short_description: p.shortDescription,
+        publication_status: p.publicationStatus,
+        created_by_email: p.createdByEmail,
+      }, { onConflict: 'id' });
+    }
+
+    // Sync posters
+    const allPosters = await db.select().from(posters);
+    for (const pos of allPosters) {
+      await client.from('posters').upsert({
+        id: pos.id,
+        class_code: pos.classCode,
+        category_name: pos.categoryName,
+        title: pos.title,
+        subtitle: pos.subtitle,
+        poster_image_url: pos.posterImageUrl,
+        participants_snapshot: pos.participantsSnapshot,
+        participant_count: pos.participantCount,
+        generation_status: pos.generationStatus,
+        publication_status: pos.publicationStatus,
+        is_featured: pos.isFeatured,
+      }, { onConflict: 'id' });
+    }
+
+    // Sync platform settings
+    const allSettings = await db.select().from(platformSettings);
+    for (const s of allSettings) {
+      await client.from('platform_settings').upsert({
+        setting_key: s.settingKey,
+        setting_value: s.settingValue,
+      }, { onConflict: 'setting_key' });
+    }
+
+    return res.json({
+      success: true,
+      message: `Successfully synchronized ${allParts.length} participants, ${allPosters.length} posters, ${allCls.length} classes, and platform settings to Supabase!`,
+      counts: {
+        classes: allCls.length,
+        participants: allParts.length,
+        posters: allPosters.length,
+        categories: allCats.length,
+      },
+    });
+  } catch (err: any) {
+    return res.status(500).json({ error: err.message || 'Sync to Supabase failed.' });
   }
 });
 
