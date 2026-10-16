@@ -50,7 +50,7 @@ import { getSupabaseClient, testSupabaseConnection } from './src/lib/supabase.ts
 
 dotenv.config();
 
-const app = express();
+export const app = express();
 const PORT = 3000;
 
 app.use(express.json({ limit: '20mb' }));
@@ -3165,4 +3165,8 @@ async function startServer() {
   process.on('SIGINT', cleanup);
 }
 
-startServer();
+if (!process.env.VERCEL) {
+  startServer();
+}
+
+export default app;

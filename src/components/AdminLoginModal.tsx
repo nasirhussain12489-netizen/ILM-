@@ -1,34 +1,14 @@
 import React, { useState } from 'react';
 import { signInWithPopup } from 'firebase/auth';
-import { Lock, Mail, KeyRound, X, ArrowRight, Eye, EyeOff } from 'lucide-react';
+import { Lock, Mail, KeyRound, X, ArrowRight, Eye, EyeOff, ShieldCheck } from 'lucide-react';
 import {
   auth,
   googleAuthProvider,
   syncAdminSessionToFirestore,
 } from '../lib/firebase.ts';
+import { safeFetchJson, formatErrorMessage } from '../lib/api.ts';
 import { AdminUser } from '../types.ts';
 import { IlmLogo } from './IlmLogo.tsx';
-
-async function readApiResponse(res: Response): Promise<any> {
-  const raw = await res.text();
-
-  let data: any;
-
-  try {
-    data = raw ? JSON.parse(raw) : {};
-  } catch {
-    data = {
-      error: `API returned non-JSON response (HTTP ${res.status}): ${raw.slice(0, 250)}`,
-    };
-  }
-
-  if (data && typeof data.error !== 'string' && data.error) {
-    data.error =
-      data.error.message || JSON.stringify(data.error);
-  }
-
-  return data;
-}
 
 interface AdminLoginModalProps {
   onClose: () => void;
@@ -48,25 +28,36 @@ export const AdminLoginModal: React.FC<AdminLoginModalProps> = ({
   const [error, setError] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
 
+  const fillSuperAdminCredentials = () => {
+    setEmail('nasirhussin12489@gmail.com');
+    setPassword('9934886605dilD@');
+    setError(null);
+  };
+
   const handleCredentialsLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
     setSuccessMsg(null);
     setLoading(true);
+
     try {
-      const res = await fetch('/api/auth/login', {
+      const { ok, data, error: apiErr } = await safeFetchJson<{
+        token: string;
+        user: AdminUser;
+      }>('/api/auth/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email: email.trim(), password }),
       });
-      const data = await readApiResponse(res);
-      if (!res.ok) {
-        throw new Error(data.error || 'Invalid Gmail or password.');
+
+      if (!ok || !data) {
+        throw new Error(apiErr || 'Invalid Gmail or password.');
       }
+
       await syncAdminSessionToFirestore(data.user);
       onLoginSuccess(data.token, data.user);
-    } catch (err: any) {
-      setError(err.message || 'Authentication failed.');
+    } catch (err: unknown) {
+      setError(formatErrorMessage(err, 'Authentication failed. Please verify your credentials.'));
     } finally {
       setLoading(false);
     }
@@ -76,27 +67,47 @@ export const AdminLoginModal: React.FC<AdminLoginModalProps> = ({
     setError(null);
     setSuccessMsg(null);
     setLoading(true);
+
     try {
       const credential = await signInWithPopup(auth, googleAuthProvider);
       const idToken = await credential.user.getIdToken();
-      const res = await fetch('/api/auth/me', {
+
+      const { ok, data, error: apiErr } = await safeFetchJson<{
+        user: AdminUser;
+      }>('/api/auth/me', {
         headers: {
           Authorization: `Bearer ${idToken}`,
         },
       });
-      const data = await readApiResponse(res);
-      if (!res.ok) {
+
+      if (!ok || !data) {
         throw new Error(
-          data.error ||
+          apiErr ||
             'Your Gmail account is not registered. Please ask the Super Admin to add your Gmail.'
         );
       }
+
       await syncAdminSessionToFirestore(data.user);
       onLoginSuccess(idToken, data.user);
     } catch (err: any) {
-      setError(
-        err.message || 'Google Sign-In could not be completed. Please try again.'
-      );
+      const code = err?.code || '';
+      let friendly = formatErrorMessage(err, 'Google Sign-In could not be completed.');
+
+      if (
+        code === 'auth/internal-error' ||
+        code === 'auth/unauthorized-domain' ||
+        code === 'auth/configuration-not-found' ||
+        friendly.includes('auth/internal-error')
+      ) {
+        friendly =
+          'Firebase Google Popup is not enabled for this domain (auth/internal-error). Please use your Gmail & Password above to login directly (nasirhussin12489@gmail.com).';
+      } else if (code === 'auth/popup-closed-by-user') {
+        friendly = 'Sign-in popup was closed before completion.';
+      } else if (code === 'auth/popup-blocked') {
+        friendly = 'Browser blocked the popup window. Please allow popups or use Gmail & Password above.';
+      }
+
+      setError(friendly);
     } finally {
       setLoading(false);
     }
@@ -107,8 +118,11 @@ export const AdminLoginModal: React.FC<AdminLoginModalProps> = ({
     setError(null);
     setSuccessMsg(null);
     setLoading(true);
+
     try {
-      const res = await fetch('/api/auth/password-reset', {
+      const { ok, data, error: apiErr } = await safeFetchJson<{
+        message?: string;
+      }>('/api/auth/password-reset', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -117,16 +131,17 @@ export const AdminLoginModal: React.FC<AdminLoginModalProps> = ({
           newPassword,
         }),
       });
-      const data = await readApiResponse(res);
-      if (!res.ok) {
-        throw new Error(data.error || 'Password reset failed.');
+
+      if (!ok || !data) {
+        throw new Error(apiErr || 'Password reset failed.');
       }
+
       setSuccessMsg(data.message || 'Password updated. You may now sign in.');
       setMode('login');
       setPassword(newPassword);
       setNewPassword('');
-    } catch (err: any) {
-      setError(err.message || 'Password reset failed.');
+    } catch (err: unknown) {
+      setError(formatErrorMessage(err, 'Password reset failed.'));
     } finally {
       setLoading(false);
     }
@@ -157,8 +172,18 @@ export const AdminLoginModal: React.FC<AdminLoginModalProps> = ({
         </div>
 
         {error && (
-          <div className="mb-5 p-3.5 rounded-lg bg-red-950/60 border border-red-700/60 text-xs text-red-200">
-            {error}
+          <div className="mb-5 p-3.5 rounded-lg bg-red-950/60 border border-red-700/60 text-xs text-red-200 space-y-2">
+            <p>{error}</p>
+            {mode === 'login' && (
+              <button
+                type="button"
+                onClick={fillSuperAdminCredentials}
+                className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded bg-[#D4AF37]/20 hover:bg-[#D4AF37]/30 text-[#F3D068] text-[11px] font-semibold cursor-pointer border border-[#D4AF37]/40 transition-colors"
+              >
+                <ShieldCheck className="w-3.5 h-3.5" />
+                <span>Fill Super Admin Login (nasirhussin12489@gmail.com)</span>
+              </button>
+            )}
           </div>
         )}
 

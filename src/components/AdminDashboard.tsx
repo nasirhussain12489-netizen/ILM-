@@ -50,6 +50,7 @@ import {
   StudentRecord,
   WeeklyResultRecord,
 } from '../types.ts';
+import { formatErrorMessage, safeFetchJson } from '../lib/api.ts';
 import { IlmLogo, downloadPosterAsPng } from './IlmLogo.tsx';
 import { PosterStageCard } from './PosterStageCard.tsx';
 import { PosterPhotoshopStudio } from './PosterPhotoshopStudio.tsx';
@@ -348,16 +349,15 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const fetchDashboardData = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await fetch('/api/admin/dashboard', {
+      const { ok, status, data, error } = await safeFetchJson<any>('/api/admin/dashboard', {
         headers: { Authorization: `Bearer ${token}` },
       });
-      if (res.status === 401 || res.status === 403) {
+      if (status === 401 || status === 403) {
         onLogout();
         return;
       }
-      const data = await res.json();
-      if (!res.ok) {
-        throw new Error(data.error || 'Failed to load dashboard');
+      if (!ok || !data) {
+        throw new Error(error || 'Failed to load dashboard data.');
       }
       setClassesList(data.classes || []);
       setCategoriesList(data.categories || []);
@@ -371,10 +371,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       setUsersList(data.users || []);
       setLogsList(data.activityLogs || []);
       setSettingsMap(data.settings || {});
-    } catch (err: any) {
+    } catch (err: unknown) {
       setBanner({
         type: 'error',
-        text: err.message || 'Failed to load dashboard data.',
+        text: formatErrorMessage(err, 'Failed to load dashboard data.'),
       });
     } finally {
       setLoading(false);
@@ -1495,7 +1495,11 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   : 'bg-red-950/50 border-red-700/60 text-red-200'
               }`}
             >
-              <span>{banner.text}</span>
+              <span>
+                {typeof banner.text === 'string' && banner.text !== '[object Object]'
+                  ? banner.text
+                  : formatErrorMessage(banner.text, 'Operation completed.')}
+              </span>
               <button
                 type="button"
                 onClick={() => setBanner(null)}

@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { signOut } from 'firebase/auth';
 import { auth } from './lib/firebase.ts';
 import { AdminUser, PublicBootstrapData } from './types.ts';
+import { safeFetchJson, formatErrorMessage } from './lib/api.ts';
 import { PublicWebsite } from './components/PublicWebsite.tsx';
 import { AdminLoginModal } from './components/AdminLoginModal.tsx';
 import { AdminDashboard } from './components/AdminDashboard.tsx';
@@ -36,44 +37,25 @@ export default function App() {
 const loadPublicBootstrap = useCallback(async () => {
   try {
     setPublicError(null);
+    const { ok, data, error } = await safeFetchJson<PublicBootstrapData>(
+      '/api/public/bootstrap',
+      {
+        headers: {
+          Accept: 'application/json',
+        },
+      }
+    );
 
-    const res = await fetch('/api/public/bootstrap', {
-      headers: {
-        Accept: 'application/json',
-      },
-    });
-
-    const contentType = res.headers.get('content-type') || '';
-
-    if (!contentType.includes('application/json')) {
-      const responseText = await res.text();
-
-      console.error(
-        'Bootstrap API returned non-JSON:',
-        res.status,
-        responseText.slice(0, 300)
-      );
-
-      throw new Error(
-        `Server returned a non-JSON response (HTTP ${res.status}). Check the API route and deployment.`
-      );
-    }
-
-    const data = await res.json();
-
-    if (!res.ok) {
-      throw new Error(
-        data?.error || `Failed to load ILM data (HTTP ${res.status}).`
-      );
+    if (!ok || !data) {
+      throw new Error(error || 'Failed to load ILM platform data.');
     }
 
     setBootstrapData(data);
   } catch (err: unknown) {
-    const message =
-      err instanceof Error
-        ? err.message
-        : 'Unable to connect to the ILM platform server.';
-
+    const message = formatErrorMessage(
+      err,
+      'Unable to connect to the ILM platform server.'
+    );
     console.error('ILM bootstrap error:', message);
     setPublicError(message);
   } finally {
