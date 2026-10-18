@@ -8,14 +8,51 @@ declare global {
 
 export const createPool = () => {
   if (!global._postgresPool) {
-    global._postgresPool = new Pool({
-      host: process.env.SQL_HOST,
-      user: process.env.SQL_USER,
-      password: process.env.SQL_PASSWORD,
-      database: process.env.SQL_DB_NAME,
-      max: 10,
-      connectionTimeoutMillis: 15000,
-    });
+    const connectionString =
+      process.env.DATABASE_URL ||
+      process.env.POSTGRES_URL ||
+      process.env.SUPABASE_DATABASE_URL;
+
+    if (connectionString) {
+      const isLocal =
+        connectionString.includes('localhost') ||
+        connectionString.includes('127.0.0.1');
+      const requiresSsl =
+        connectionString.includes('sslmode=require') ||
+        (!isLocal && !connectionString.includes('sslmode=disable'));
+
+      global._postgresPool = new Pool({
+        connectionString,
+        ssl: requiresSsl ? { rejectUnauthorized: false } : undefined,
+        max: 10,
+        connectionTimeoutMillis: 15000,
+      });
+    } else {
+      const host = process.env.SQL_HOST || 'localhost';
+      const isUnixSocket = host.startsWith('/');
+      const isLocal = host.includes('localhost') || host.includes('127.0.0.1');
+
+      let sslConfig: boolean | { rejectUnauthorized: boolean } | undefined =
+        undefined;
+      if (process.env.SQL_SSL === 'true') {
+        sslConfig = { rejectUnauthorized: false };
+      } else if (process.env.SQL_SSL === 'false' || isUnixSocket || isLocal) {
+        sslConfig = undefined;
+      } else if (host && !isLocal && !isUnixSocket) {
+        sslConfig = { rejectUnauthorized: false };
+      }
+
+      global._postgresPool = new Pool({
+        host,
+        user: process.env.SQL_USER,
+        password: process.env.SQL_PASSWORD,
+        database: process.env.SQL_DB_NAME,
+        port: process.env.SQL_PORT ? Number(process.env.SQL_PORT) : 5432,
+        ssl: sslConfig,
+        max: 10,
+        connectionTimeoutMillis: 15000,
+      });
+    }
 
     global._postgresPool.on('error', (err) => {
       console.error('Unexpected error on idle SQL pool client:', err);

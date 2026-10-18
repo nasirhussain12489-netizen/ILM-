@@ -56,6 +56,23 @@ const PORT = 3000;
 
 app.use(express.json({ limit: '20mb' }));
 
+// Enable CORS for API requests
+app.use((req, res, next) => {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader(
+    'Access-Control-Allow-Methods',
+    'GET, POST, PUT, PATCH, DELETE, OPTIONS'
+  );
+  res.setHeader(
+    'Access-Control-Allow-Headers',
+    'Content-Type, Authorization, Accept, X-Requested-With'
+  );
+  if (req.method === 'OPTIONS') {
+    return res.status(204).end();
+  }
+  next();
+});
+
 // Ensure uploads directory exists (safely handle read-only serverless filesystems)
 const uploadsDir = path.join(process.cwd(), 'uploads');
 try {
