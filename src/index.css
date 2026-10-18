@@ -2,9 +2,9 @@
 
 @layer base {
   :root {
-    --font-display: 'Cinzel', Georgia, serif;
-    --font-sans: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;
-    --font-mono: 'JetBrains Mono', monospace;
+    --font-display: Georgia, 'Times New Roman', serif;
+    --font-sans: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    --font-mono: 'Consolas', 'SFMono-Regular', 'Menlo', monospace;
   }
 
   html {
