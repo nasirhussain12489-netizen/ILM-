@@ -1,6 +1,7 @@
 import express, { Request, Response } from 'express';
 import fs from 'fs';
 import path from 'path';
+import os from 'os';
 import crypto from 'crypto';
 import https from 'https';
 import * as dotenv from 'dotenv';
@@ -55,10 +56,37 @@ const PORT = 3000;
 
 app.use(express.json({ limit: '20mb' }));
 
-// Ensure uploads directory exists
+// Ensure uploads directory exists (safely handle read-only serverless filesystems)
 const uploadsDir = path.join(process.cwd(), 'uploads');
-if (!fs.existsSync(uploadsDir)) {
-  fs.mkdirSync(uploadsDir, { recursive: true });
+try {
+  if (!fs.existsSync(uploadsDir)) {
+    fs.mkdirSync(uploadsDir, { recursive: true });
+  }
+} catch (err) {
+  console.warn('Uploads directory creation skipped (read-only filesystem):', err);
+}
+
+export function safeSaveUploadedBuffer(
+  fileName: string,
+  buffer: Buffer,
+  mimeType: string = 'image/png'
+): string {
+  try {
+    if (!fs.existsSync(uploadsDir)) {
+      fs.mkdirSync(uploadsDir, { recursive: true });
+    }
+    const filePath = path.join(uploadsDir, fileName);
+    fs.writeFileSync(filePath, buffer);
+    return `/uploads/${fileName}`;
+  } catch {
+    try {
+      const tmpPath = path.join(os.tmpdir(), fileName);
+      fs.writeFileSync(tmpPath, buffer);
+      return `/uploads/${fileName}`;
+    } catch {
+      return `data:${mimeType};base64,${buffer.toString('base64')}`;
+    }
+  }
 }
 
 // Serve generated scholar portraits from src/assets/images
@@ -76,9 +104,20 @@ if (fs.existsSync(generatedImagesDir)) {
 }
 
 // Serve uploaded files safely with nosniff to prevent script execution
+if (fs.existsSync(uploadsDir)) {
+  app.use(
+    '/uploads',
+    express.static(uploadsDir, {
+      setHeaders: (res) => {
+        res.setHeader('X-Content-Type-Options', 'nosniff');
+        res.setHeader('Content-Security-Policy', "default-src 'none'");
+      },
+    })
+  );
+}
 app.use(
   '/uploads',
-  express.static(uploadsDir, {
+  express.static(os.tmpdir(), {
     setHeaders: (res) => {
       res.setHeader('X-Content-Type-Options', 'nosniff');
       res.setHeader('Content-Security-Policy', "default-src 'none'");
@@ -835,16 +874,19 @@ app.post(
         });
       }
 
+      const resolvedPhoto = await resolveImageMediaUrl(
+        photoUrl,
+        `student_${cleanAdm}`,
+        '/assets/images/scholar_portrait_ahmed_1791787523001.jpg'
+      );
+
       const inserted = await db
         .insert(students)
         .values({
           admissionNo: cleanAdm,
           fullName: String(fullName).trim(),
           classCode: targetClass,
-          photoUrl:
-            photoUrl && String(photoUrl).trim()
-              ? String(photoUrl).trim()
-              : '/assets/images/scholar_portrait_ahmed_1791787523001.jpg',
+          photoUrl: resolvedPhoto,
           bio: bio ? String(bio).trim() : null,
           createdByEmail: admin.email,
         })
@@ -1327,10 +1369,13 @@ app.post(
     }
 
     const finalName = `${safeBase}_${Date.now()}${ext}`;
-    const filePath = path.join(uploadsDir, finalName);
-    fs.writeFileSync(filePath, buffer);
+    const fileUrl = safeSaveUploadedBuffer(
+      finalName,
+      buffer,
+      ext.includes('png') ? 'image/png' : 'image/jpeg'
+    );
     return res.status(201).json({
-      fileUrl: `/uploads/${finalName}`,
+      fileUrl,
       hostedOn: 'local',
     });
   } catch (error: any) {
@@ -1395,11 +1440,11 @@ app.patch(
         finalPosterUrl = imgbbUrl;
       } else {
         const finalName = `ilm_class_${existing.classCode}_poster_${Date.now()}.png`;
-        fs.writeFileSync(
-          path.join(uploadsDir, finalName),
-          Buffer.from(base64Clean, 'base64')
+        finalPosterUrl = safeSaveUploadedBuffer(
+          finalName,
+          Buffer.from(base64Clean, 'base64'),
+          'image/png'
         );
-        finalPosterUrl = `/uploads/${finalName}`;
       }
     }
 
@@ -1476,11 +1521,11 @@ app.post(
           finalMediaUrl = imgbbUrl;
         } else {
           const finalName = `ilm_feed_poster_${poster.classCode}_${Date.now()}.png`;
-          fs.writeFileSync(
-            path.join(uploadsDir, finalName),
-            Buffer.from(base64Clean, 'base64')
+          finalMediaUrl = safeSaveUploadedBuffer(
+            finalName,
+            Buffer.from(base64Clean, 'base64'),
+            'image/png'
           );
-          finalMediaUrl = `/uploads/${finalName}`;
         }
       }
 
@@ -1564,13 +1609,18 @@ app.post(
       // Publish immediately to public Home Page Feed so posts are visible right away
       const initialStatus = 'APPROVED';
 
+      const resolvedMediaUrl = await resolveImageMediaUrl(
+        mediaUrl,
+        `feed_${targetClass}_${Date.now()}`
+      );
+
       const inserted = await db
         .insert(feedPosts)
         .values({
           classCode: targetClass,
           title: String(title).trim(),
           caption: String(caption).trim(),
-          mediaUrl: String(mediaUrl).trim(),
+          mediaUrl: resolvedMediaUrl,
           mediaType: mediaType || 'PHOTO',
           status: initialStatus,
           submittedByEmail: admin.email,
@@ -1813,12 +1863,17 @@ app.post(
         });
       }
 
+      const resolvedWinnerPhoto = await resolveImageMediaUrl(
+        winnerPhotoUrl,
+        `winner_${winnerClass}_${Date.now()}`
+      );
+
       const inserted = await db
         .insert(weeklyResults)
         .values({
           resultCategory: String(resultCategory),
           winnerName: String(winnerName).trim(),
-          winnerPhotoUrl: String(winnerPhotoUrl).trim(),
+          winnerPhotoUrl: resolvedWinnerPhoto,
           winnerClass: String(winnerClass),
           weekLabel: String(weekLabel).trim(),
           resultDate: String(resultDate).trim(),
@@ -2657,6 +2712,30 @@ async function uploadToImgBB(
   }
 }
 
+async function resolveImageMediaUrl(
+  inputUrl: string | undefined | null,
+  fileNamePrefix: string,
+  defaultUrl: string = '/assets/images/scholar_portrait_ahmed_1791787523001.jpg'
+): Promise<string> {
+  if (!inputUrl || !String(inputUrl).trim()) {
+    return defaultUrl;
+  }
+  const clean = String(inputUrl).trim();
+  if (!clean.startsWith('data:image/')) {
+    return clean;
+  }
+  const base64Clean = clean.split(',')[1] || clean;
+  const imgbbUrl = await uploadToImgBB(base64Clean, `${fileNamePrefix}_${Date.now()}`);
+  if (imgbbUrl) {
+    return imgbbUrl;
+  }
+  return safeSaveUploadedBuffer(
+    `${fileNamePrefix}_${Date.now()}.png`,
+    Buffer.from(base64Clean, 'base64'),
+    'image/png'
+  );
+}
+
 // ============================================================================
 // CLOUD DATABASE & IMGBB STATUS & TESTING ENDPOINTS
 // ============================================================================
@@ -3113,12 +3192,14 @@ app.post(
       }
 
       const finalName = `${safeBase}_${Date.now()}${ext}`;
-      const filePath = path.join(uploadsDir, finalName);
-
-      fs.writeFileSync(filePath, buffer);
+      const fileUrl = safeSaveUploadedBuffer(
+        finalName,
+        buffer,
+        ext.includes('png') ? 'image/png' : ext.includes('jpg') ? 'image/jpeg' : 'application/octet-stream'
+      );
 
       return res.status(201).json({
-        fileUrl: `/uploads/${finalName}`,
+        fileUrl,
         fileType: ext.replace('.', '').toUpperCase(),
         fileSize: formattedSize,
       });

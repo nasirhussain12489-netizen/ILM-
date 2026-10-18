@@ -346,6 +346,26 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     [token]
   );
 
+  const adminFetch = useCallback(
+    async <T = any>(url: string, init?: RequestInit) => {
+      const isFormData = init?.body instanceof FormData;
+      const headers: Record<string, string> = {
+        Authorization: `Bearer ${token}`,
+      };
+      if (!isFormData) {
+        headers['Content-Type'] = 'application/json';
+      }
+      return safeFetchJson<T>(url, {
+        ...init,
+        headers: {
+          ...headers,
+          ...((init?.headers as Record<string, string>) || {}),
+        },
+      });
+    },
+    [token]
+  );
+
   const fetchDashboardData = useCallback(async () => {
     setLoading(true);
     try {
@@ -466,9 +486,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         : '/api/admin/participants';
       const method = editingParticipant ? 'PUT' : 'POST';
 
-      const res = await fetch(endpoint, {
+      const { ok, data, error: apiErr } = await adminFetch<any>(endpoint, {
         method,
-        headers: authHeaders(),
         body: JSON.stringify({
           admissionNo: pAdmissionNo.trim(),
           fullName: pName.trim(),
@@ -480,9 +499,9 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           publicationStatus: 'PUBLISHED',
         }),
       });
-      const data = await res.json();
-      if (!res.ok) {
-        throw new Error(data.error || 'Failed to save participant.');
+
+      if (!ok || !data) {
+        throw new Error(apiErr || 'Failed to save participant.');
       }
 
       setPAdmissionNo('');
@@ -502,10 +521,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       });
       await fetchDashboardData();
       onPublicDataChanged();
-    } catch (err: any) {
+    } catch (err: unknown) {
       setBanner({
         type: 'error',
-        text: err.message || 'Could not save participant.',
+        text: formatErrorMessage(err, 'Could not save participant.'),
       });
     } finally {
       setActionBusy(false);
@@ -643,9 +662,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         : '/api/admin/feed';
       const method = editingFeedPost ? 'PUT' : 'POST';
 
-      const res = await fetch(endpoint, {
+      const { ok, data, error: apiErr } = await adminFetch<any>(endpoint, {
         method,
-        headers: authHeaders(),
         body: JSON.stringify({
           classCode: targetClass,
           title: fTitle.trim(),
@@ -654,9 +672,9 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           mediaType: fMediaType,
         }),
       });
-      const data = await res.json();
-      if (!res.ok) {
-        throw new Error(data.error || 'Failed to submit feed post.');
+
+      if (!ok || !data) {
+        throw new Error(apiErr || 'Failed to submit feed post.');
       }
 
       setFTitle('');
@@ -670,10 +688,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       });
       await fetchDashboardData();
       onPublicDataChanged();
-    } catch (err: any) {
+    } catch (err: unknown) {
       setBanner({
         type: 'error',
-        text: err.message || 'Failed to submit feed post.',
+        text: formatErrorMessage(err, 'Failed to submit feed post.'),
       });
     } finally {
       setActionBusy(false);
@@ -722,9 +740,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     setActionBusy(true);
     setBanner(null);
     try {
-      const res = await fetch('/api/admin/results', {
+      const { ok, data, error: apiErr } = await adminFetch<any>('/api/admin/results', {
         method: 'POST',
-        headers: authHeaders(),
         body: JSON.stringify({
           resultCategory: rCategory,
           winnerName: rWinnerName.trim(),
@@ -736,10 +753,11 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           publicationStatus: 'PUBLISHED',
         }),
       });
-      const data = await res.json();
-      if (!res.ok) {
-        throw new Error(data.error || 'Failed to publish weekly result.');
+
+      if (!ok || !data) {
+        throw new Error(apiErr || 'Failed to publish weekly result.');
       }
+
       setRWinnerName('');
       setRRemarks('');
       setBanner({
@@ -748,10 +766,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       });
       await fetchDashboardData();
       onPublicDataChanged();
-    } catch (err: any) {
+    } catch (err: unknown) {
       setBanner({
         type: 'error',
-        text: err.message || 'Failed to publish result.',
+        text: formatErrorMessage(err, 'Failed to publish result.'),
       });
     } finally {
       setActionBusy(false);
@@ -1208,9 +1226,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     setActionBusy(true);
     setBanner(null);
     try {
-      const res = await fetch('/api/admin/feed', {
+      const { ok, error: apiErr } = await adminFetch<any>('/api/admin/feed', {
         method: 'POST',
-        headers: authHeaders(),
         body: JSON.stringify({
           classCode: poster.classCode,
           title: `Class ${poster.classCode} Official Competition Poster`,
@@ -1221,10 +1238,11 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           mediaType: 'POSTER',
         }),
       });
-      const data = await res.json();
-      if (!res.ok) {
-        throw new Error(data.error || 'Failed to post poster to feed.');
+
+      if (!ok) {
+        throw new Error(apiErr || 'Failed to post poster to feed.');
       }
+
       setBanner({
         type: 'success',
         text: hasGlobalControl
@@ -1233,10 +1251,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       });
       await fetchDashboardData();
       onPublicDataChanged();
-    } catch (err: any) {
+    } catch (err: unknown) {
       setBanner({
         type: 'error',
-        text: err.message || 'Failed to post poster to feed.',
+        text: formatErrorMessage(err, 'Failed to post poster to feed.'),
       });
     } finally {
       setActionBusy(false);

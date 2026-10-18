@@ -23,6 +23,7 @@ import {
   rasterizePosterToPngDataUrl,
 } from './IlmLogo.tsx';
 import { buildIlmPosterSvg, CATEGORY_ORDER } from '../lib/posterSvg.ts';
+import { safeFetchJson, formatErrorMessage } from '../lib/api.ts';
 
 async function getPosterAuthHeaders(): Promise<Record<string, string>> {
   const headers: Record<string, string> = {
@@ -288,7 +289,7 @@ export const PosterStageCard: React.FC<PosterStageCardProps> = ({
       const pngOrCustomUrl = await rasterizePosterToPngDataUrl(effectivePoster);
       const headers = await getPosterAuthHeaders();
 
-      const res = await fetch(
+      const { ok, data: json, error: apiErr } = await safeFetchJson<any>(
         `/api/public/posters/${poster.id}/share-to-feed`,
         {
           method: 'POST',
@@ -301,9 +302,9 @@ export const PosterStageCard: React.FC<PosterStageCardProps> = ({
           }),
         }
       );
-      const json = await res.json();
-      if (!res.ok) {
-        throw new Error(json.error || 'Failed to share poster to Feed.');
+
+      if (!ok) {
+        throw new Error(apiErr || 'Failed to share poster to Feed.');
       }
 
       setShowShareModal(false);
@@ -317,10 +318,10 @@ export const PosterStageCard: React.FC<PosterStageCardProps> = ({
       if (onPostToFeed) {
         // Optional callback notification
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
       setStatusToast({
         type: 'error',
-        text: err.message || 'Failed to share poster to Feed.',
+        text: formatErrorMessage(err, 'Failed to share poster to Feed.'),
       });
     } finally {
       setSharingToFeed(false);
