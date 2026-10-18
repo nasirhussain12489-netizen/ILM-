@@ -4,6 +4,31 @@ let cachedClient: SupabaseClient | null = null;
 let cachedUrl = '';
 let cachedKey = '';
 
+export function hasSupabaseRuntimeConfig(): boolean {
+  const url = (process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || '').trim();
+  const anonKey = (process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY || '').trim();
+  const serviceRoleKey = (process.env.SUPABASE_SERVICE_ROLE_KEY || '').trim();
+
+  if (!url || !url.startsWith('https://')) {
+    return false;
+  }
+
+  if (url.includes('demo-project.supabase.co')) {
+    return false;
+  }
+
+  const normalizedUrl = url.replace(/\/$/, '');
+  if (!normalizedUrl || /example|placeholder|demo/i.test(normalizedUrl)) {
+    return false;
+  }
+
+  if (!anonKey && !serviceRoleKey) {
+    return false;
+  }
+
+  return true;
+}
+
 export function getSupabaseClient(customUrl?: string, customKey?: string): SupabaseClient | null {
   const url = customUrl || (typeof process !== 'undefined' ? process.env.SUPABASE_URL : '') || (typeof import.meta !== 'undefined' && (import.meta as any).env?.VITE_SUPABASE_URL) || '';
   const key = customKey || (typeof process !== 'undefined' ? (process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY) : '') || (typeof import.meta !== 'undefined' && (import.meta as any).env?.VITE_SUPABASE_ANON_KEY) || '';

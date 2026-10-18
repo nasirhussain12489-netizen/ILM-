@@ -186,3 +186,18 @@ export interface PublicBootstrapData {
   libraryResources: LibraryResourceRecord[];
   settings: Record<string, string>;
 }
+
+export function isResourcePubliclyVisible(
+  publicationStatus?: string | null
+): boolean {
+  if (publicationStatus === undefined || publicationStatus === null) {
+    return true;
+  }
+
+  const normalized = String(publicationStatus).trim().toUpperCase();
+  return normalized === 'PUBLISHED' || normalized === 'PUBLIC';
+}
+
+export function isAiAssistantEnabled(_value?: string | null): boolean {
+  return false;
+}

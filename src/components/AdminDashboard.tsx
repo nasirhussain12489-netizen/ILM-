@@ -4746,10 +4746,15 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                       />
                     </div>
 
-                    {/* ===============================================================
-                        CLOUD DATABASE & IMAGE STORAGE (CLOUDSQL, SUPABASE, IMGBB)
-                       =============================================================== */}
-                    <div className="pt-4 border-t border-neutral-800 space-y-4">
+                    <div className="pt-4 border-t border-neutral-800">
+                      <div className="p-4 rounded-xl bg-[#0D101A] border border-neutral-800">
+                        <p className="text-sm text-neutral-300">
+                          AI chat assistant is disabled for this deployment.
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="space-y-4">
                       <div className="flex items-center justify-between">
                         <div>
                           <h4 className="text-sm font-semibold text-[#F3D068] flex items-center gap-2">
@@ -4764,7 +4769,6 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                         </span>
                       </div>
 
-                      {/* SECTION A: IMGBB.COM IMAGE HOSTING */}
                       <div className="p-4 rounded-xl bg-[#0D101A] border border-neutral-800 space-y-3">
                         <div className="flex items-center justify-between">
                           <div className="flex items-center gap-2">
@@ -4835,7 +4839,6 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                         </div>
                       </div>
 
-                      {/* SECTION B: SUPABASE DATABASE */}
                       <div className="p-4 rounded-xl bg-[#0D101A] border border-neutral-800 space-y-3">
                         <div className="flex items-center justify-between">
                           <div className="flex items-center gap-2">
@@ -4968,8 +4971,9 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                         </div>
                       </div>
                     </div>
+                  </div>
 
-                    <div className="pt-2">
+                  <div className="pt-2">
                       <button
                         type="submit"
                         disabled={actionBusy}
@@ -4978,7 +4982,6 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                         Save Platform Settings & Database Config
                       </button>
                     </div>
-                  </div>
                 </form>
               )}
             </>

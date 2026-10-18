@@ -47,7 +47,9 @@ import {
   requireGlobalControl,
   requireSuperAdmin,
 } from './src/middleware/auth.ts';
+import { createFallbackBootstrapData } from './src/lib/bootstrap.ts';
 import { getSupabaseClient, testSupabaseConnection } from './src/lib/supabase.ts';
+import { isAiAssistantEnabled } from './src/types.ts';
 
 dotenv.config();
 
@@ -309,9 +311,27 @@ app.get('/api/public/bootstrap', async (_req: Request, res: Response) => {
     });
   } catch (error: any) {
     console.error('Error in /api/public/bootstrap:', error);
-    res
-      .status(500)
-      .json({ error: 'Failed to load public platform content. Please try again.' });
+    return res.json(createFallbackBootstrapData());
+  }
+});
+
+app.post('/api/public/ai/chat', async (req: Request, res: Response) => {
+  try {
+    const message = typeof req.body?.message === 'string' ? req.body.message.trim() : '';
+    if (!message) {
+      return res.status(400).json({ error: 'A message is required to ask the AI assistant.' });
+    }
+
+    if (!isAiAssistantEnabled(process.env.AI_ASSISTANT_ENABLED)) {
+      return res.status(403).json({ error: 'The AI assistant has been disabled for this deployment.' });
+    }
+
+    return res.status(403).json({ error: 'The AI assistant is disabled for this deployment.' });
+  } catch (error: any) {
+    console.error('AI chat error:', error);
+    return res.status(500).json({
+      error: error?.message || 'The AI assistant could not generate a response.',
+    });
   }
 });
 
