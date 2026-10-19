@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Lock, User, X, ArrowRight, Eye, EyeOff, ShieldCheck } from 'lucide-react';
+import { Lock, User, X, ArrowRight, Eye, EyeOff } from 'lucide-react';
 import { safeFetchJson, formatErrorMessage } from '../lib/api.ts';
 import { AdminUser } from '../types.ts';
 import { IlmLogo } from './IlmLogo.tsx';
@@ -21,12 +21,6 @@ export const AdminLoginModal: React.FC<AdminLoginModalProps> = ({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
-
-  const fillSuperAdminCredentials = () => {
-    setUsername('Dilshad1345');
-    setPassword('9934886605dilD@');
-    setError(null);
-  };
 
   const handleCredentialsLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -120,18 +114,8 @@ export const AdminLoginModal: React.FC<AdminLoginModalProps> = ({
         </div>
 
         {error && (
-          <div className="mb-5 p-3.5 rounded-lg bg-red-950/60 border border-red-700/60 text-xs text-red-200 space-y-2">
+          <div className="mb-5 p-3.5 rounded-lg bg-red-950/60 border border-red-700/60 text-xs text-red-200">
             <p>{error}</p>
-            {mode === 'login' && (
-              <button
-                type="button"
-                onClick={fillSuperAdminCredentials}
-                className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded bg-[#D4AF37]/20 hover:bg-[#D4AF37]/30 text-[#F3D068] text-[11px] font-semibold cursor-pointer border border-[#D4AF37]/40 transition-colors"
-              >
-                <ShieldCheck className="w-3.5 h-3.5" />
-                <span>Fill Super Admin Login (Dilshad1345)</span>
-              </button>
-            )}
           </div>
         )}
 
@@ -154,7 +138,7 @@ export const AdminLoginModal: React.FC<AdminLoginModalProps> = ({
                   required
                   value={username}
                   onChange={(e) => setUsername(e.target.value)}
-                  placeholder="Enter username (e.g. Dilshad1345)"
+                  placeholder="Enter username"
                   autoComplete="username"
                   className="w-full pl-10 pr-4 py-2.5 rounded-lg bg-[#12151F] border border-neutral-700 focus:border-[#D4AF37] focus:outline-none text-sm text-white"
                 />
@@ -211,17 +195,6 @@ export const AdminLoginModal: React.FC<AdminLoginModalProps> = ({
               <span>{loading ? 'Signing in...' : 'Sign In with Username & Password'}</span>
               <ArrowRight className="w-4 h-4" />
             </button>
-
-            <div className="pt-2">
-              <button
-                type="button"
-                onClick={fillSuperAdminCredentials}
-                className="w-full py-2 px-3 rounded-lg bg-neutral-900/60 hover:bg-neutral-900 text-xs text-neutral-400 hover:text-[#F3D068] border border-neutral-800 transition-colors flex items-center justify-center gap-2 cursor-pointer"
-              >
-                <ShieldCheck className="w-3.5 h-3.5 text-[#D4AF37]" />
-                <span>Fill Super Admin (Dilshad1345)</span>
-              </button>
-            </div>
           </form>
         ) : (
           <form onSubmit={handlePasswordReset} className="space-y-4">
@@ -236,7 +209,7 @@ export const AdminLoginModal: React.FC<AdminLoginModalProps> = ({
                   required
                   value={username}
                   onChange={(e) => setUsername(e.target.value)}
-                  placeholder="Enter registered username (e.g. Dilshad1345)"
+                  placeholder="Enter registered username"
                   className="w-full pl-10 pr-4 py-2.5 rounded-lg bg-[#12151F] border border-neutral-700 focus:border-[#D4AF37] focus:outline-none text-sm text-white"
                 />
               </div>

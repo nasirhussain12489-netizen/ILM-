@@ -74,18 +74,27 @@ const pool = createPool();
 export const db = drizzle(pool, { schema });
 export { pool };
 
-export function getDbOrThrow() {
-  const hasSqlConfig = Boolean(
+function checkHasSqlConfig(): boolean {
+  if (
     process.env.SQL_HOST ||
-      process.env.SQL_DB_NAME ||
-      process.env.SQL_USER ||
-      process.env.SQL_PASSWORD ||
-      process.env.DATABASE_URL ||
-      process.env.POSTGRES_URL ||
-      process.env.SUPABASE_DATABASE_URL
-  );
+    process.env.SQL_DB_NAME ||
+    process.env.SQL_USER ||
+    process.env.SQL_PASSWORD
+  ) {
+    return true;
+  }
+  if (
+    isValidPostgresConnectionString(process.env.DATABASE_URL) ||
+    isValidPostgresConnectionString(process.env.POSTGRES_URL) ||
+    isValidPostgresConnectionString(process.env.SUPABASE_DATABASE_URL)
+  ) {
+    return true;
+  }
+  return false;
+}
 
-  if (!hasSqlConfig) {
+export function getDbOrThrow() {
+  if (!checkHasSqlConfig()) {
     throw new Error('No SQL database is configured for this deployment.');
   }
 
@@ -93,17 +102,7 @@ export function getDbOrThrow() {
 }
 
 export function requireSqlDbForWrite(operation: string) {
-  const hasSqlConfig = Boolean(
-    process.env.SQL_HOST ||
-      process.env.SQL_DB_NAME ||
-      process.env.SQL_USER ||
-      process.env.SQL_PASSWORD ||
-      process.env.DATABASE_URL ||
-      process.env.POSTGRES_URL ||
-      process.env.SUPABASE_DATABASE_URL
-  );
-
-  if (!hasSqlConfig) {
+  if (!checkHasSqlConfig()) {
     throw new Error(`No SQL database is configured for ${operation}.`);
   }
 
