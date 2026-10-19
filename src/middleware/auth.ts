@@ -1,7 +1,5 @@
 import { Request, Response, NextFunction } from 'express';
-import { adminAuth } from '../lib/firebase-admin.ts';
 import {
-  getOrCreateFirebaseAdminUser,
   getUserByEmail,
   verifySessionToken,
 } from '../db/repository.ts';
@@ -14,6 +12,7 @@ export interface AdminUserRecord {
   role: 'SUPER_ADMIN' | 'TEACHER' | 'CLASS_ADMIN';
   assignedClass: string | null;
   status: string;
+  username?: string | null;
 }
 
 export interface AuthRequest extends Request {
@@ -34,51 +33,18 @@ export const requireAuth = async (
 
   const token = authHeader.split('Bearer ')[1].trim();
   try {
-    // 1. Check backend session token (from Email/Password administrator login)
     const sessionClaims = verifySessionToken(token);
-    if (sessionClaims) {
-      const dbUser = await getUserByEmail(sessionClaims.email);
-      if (!dbUser || dbUser.status !== 'ACTIVE') {
-        return res
-          .status(403)
-          .json({ error: 'Access denied: Administrator account is inactive or revoked.' });
-      }
-      req.adminUser = {
-        id: dbUser.id,
-        uid: dbUser.uid,
-        email: dbUser.email,
-        name: dbUser.name,
-        role: dbUser.role as 'SUPER_ADMIN' | 'TEACHER' | 'CLASS_ADMIN',
-        assignedClass: dbUser.assignedClass,
-        status: dbUser.status,
-      };
-      return next();
-    }
-
-    // 2. Verify Firebase ID Token (from Google Sign-In)
-    const decodedToken = await adminAuth.verifyIdToken(token);
-    if (!decodedToken.email) {
+    if (!sessionClaims) {
       return res
         .status(401)
-        .json({ error: 'Unauthorized: Verified email is required.' });
+        .json({ error: 'Unauthorized: Invalid or expired administrator session.' });
     }
 
-    const dbUser = await getOrCreateFirebaseAdminUser(
-      decodedToken.uid,
-      decodedToken.email,
-      decodedToken.name
-    );
-
-    if (!dbUser) {
-      return res.status(403).json({
-        error: `Access denied: ${decodedToken.email} is not registered as an authorized ILM Super Admin, Teacher, or Class Admin.`,
-      });
-    }
-
-    if (dbUser.status !== 'ACTIVE') {
-      return res.status(403).json({
-        error: 'Access denied: Your administrator account has been deactivated.',
-      });
+    const dbUser = await getUserByEmail(sessionClaims.email);
+    if (!dbUser || dbUser.status !== 'ACTIVE') {
+      return res
+        .status(403)
+        .json({ error: 'Access denied: Administrator account is inactive or revoked.' });
     }
 
     req.adminUser = {
@@ -89,6 +55,7 @@ export const requireAuth = async (
       role: dbUser.role as 'SUPER_ADMIN' | 'TEACHER' | 'CLASS_ADMIN',
       assignedClass: dbUser.assignedClass,
       status: dbUser.status,
+      username: dbUser.username || null,
     };
     return next();
   } catch (error) {

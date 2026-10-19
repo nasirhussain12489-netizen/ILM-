@@ -16,7 +16,6 @@ import {
   X,
 } from 'lucide-react';
 import { PosterRecord, ParticipantRecord } from '../types.ts';
-import { auth } from '../lib/firebase.ts';
 import {
   IlmLogo,
   downloadPosterAsPng,
@@ -25,22 +24,13 @@ import {
 import { buildIlmPosterSvg, CATEGORY_ORDER } from '../lib/posterSvg.ts';
 import { safeFetchJson, formatErrorMessage } from '../lib/api.ts';
 
-async function getPosterAuthHeaders(): Promise<Record<string, string>> {
+function getPosterAuthHeaders(): Record<string, string> {
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
   };
   const sessionToken = sessionStorage.getItem('ilm_admin_session_token');
   if (sessionToken) {
     headers.Authorization = `Bearer ${sessionToken}`;
-    return headers;
-  }
-  if (auth.currentUser) {
-    try {
-      const idToken = await auth.currentUser.getIdToken();
-      headers.Authorization = `Bearer ${idToken}`;
-    } catch {
-      // ignore
-    }
   }
   return headers;
 }

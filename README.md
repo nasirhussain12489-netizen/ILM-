@@ -1,6 +1,6 @@
 # ILM — Integrated Learning Master
 
-A complete educational management web application built with React 19, TypeScript, Tailwind CSS, Express, Drizzle ORM, Cloud SQL (PostgreSQL), and Firebase Authentication.
+A complete educational management web application built with React 19, TypeScript, Tailwind CSS, Express, Drizzle ORM, PostgreSQL (Cloud SQL & Supabase), and secure JWT Administrator Authentication.
 
 ## Core Architecture & Features
 

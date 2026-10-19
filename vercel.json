@@ -4,7 +4,7 @@
   "outputDirectory": "dist",
   "functions": {
     "api/index.ts": {
-      "includeFiles": "{src/assets/images/**,firebase-applet-config.json}"
+      "includeFiles": "src/assets/images/**"
     }
   },
   "rewrites": [

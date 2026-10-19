@@ -6,12 +6,22 @@ declare global {
   var _postgresPool: Pool | undefined;
 }
 
+function isValidPostgresConnectionString(str?: string): boolean {
+  if (!str || typeof str !== 'string') return false;
+  const trimmed = str.trim().toLowerCase();
+  return trimmed.startsWith('postgres://') || trimmed.startsWith('postgresql://');
+}
+
 export const createPool = () => {
   if (!global._postgresPool) {
-    const connectionString =
+    const rawConnectionString =
       process.env.DATABASE_URL ||
       process.env.POSTGRES_URL ||
       process.env.SUPABASE_DATABASE_URL;
+
+    const connectionString = isValidPostgresConnectionString(rawConnectionString)
+      ? rawConnectionString!.trim()
+      : null;
 
     if (connectionString) {
       const isLocal =
@@ -34,11 +44,9 @@ export const createPool = () => {
 
       let sslConfig: boolean | { rejectUnauthorized: boolean } | undefined =
         undefined;
-      if (process.env.SQL_SSL === 'true') {
-        sslConfig = { rejectUnauthorized: false };
-      } else if (process.env.SQL_SSL === 'false' || isUnixSocket || isLocal) {
+      if (isUnixSocket || isLocal || process.env.SQL_SSL === 'false') {
         sslConfig = undefined;
-      } else if (host && !isLocal && !isUnixSocket) {
+      } else if (process.env.SQL_SSL === 'true' || (host && !isLocal && !isUnixSocket)) {
         sslConfig = { rejectUnauthorized: false };
       }
 

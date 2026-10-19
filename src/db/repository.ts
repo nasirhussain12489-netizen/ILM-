@@ -1,5 +1,5 @@
 import crypto from 'crypto';
-import { and, asc, desc, eq } from 'drizzle-orm';
+import { and, asc, desc, eq, or, sql } from 'drizzle-orm';
 import { db } from './index.ts';
 import {
   activityLogs,
@@ -140,61 +140,6 @@ export async function logActivity(params: {
   }
 }
 
-export async function getOrCreateFirebaseAdminUser(
-  uid: string,
-  email: string,
-  displayName?: string
-) {
-  try {
-    const normalizedEmail = email.trim().toLowerCase();
-    const existingByEmail = await db
-      .select()
-      .from(users)
-      .where(eq(users.email, normalizedEmail));
-
-    if (existingByEmail.length > 0) {
-      const existing = existingByEmail[0];
-      if (existing.uid !== uid) {
-        const updated = await db
-          .update(users)
-          .set({ uid, updatedAt: new Date() })
-          .where(eq(users.id, existing.id))
-          .returning();
-        return updated[0];
-      }
-      return existing;
-    }
-
-    // Bootstrap owner email as SUPER_ADMIN
-    if (
-      normalizedEmail === 'nasirhussain12489@gmail.com' ||
-      normalizedEmail === 'nasirhussin12489@gmail.com'
-    ) {
-      const inserted = await db
-        .insert(users)
-        .values({
-          uid,
-          email: normalizedEmail,
-          name: displayName || 'Nasir Hussain (Super Admin)',
-          role: 'SUPER_ADMIN',
-          assignedClass: null,
-          status: 'ACTIVE',
-        })
-        .onConflictDoUpdate({
-          target: users.uid,
-          set: { email: normalizedEmail, updatedAt: new Date() },
-        })
-        .returning();
-      return inserted[0];
-    }
-
-    return null;
-  } catch (error) {
-    console.error('Database query failed in getOrCreateFirebaseAdminUser:', error);
-    throw new Error('Failed to verify administrator account.', { cause: error });
-  }
-}
-
 export async function getUserByEmail(email: string) {
   try {
     const normalized = email.trim().toLowerCase();
@@ -202,21 +147,64 @@ export async function getUserByEmail(email: string) {
     return rows[0] || null;
   } catch (error) {
     const normalized = email.trim().toLowerCase();
-    if (normalized === 'nasirhussain12489@gmail.com') {
+    if (
+      normalized === 'nasirhussain12489@gmail.com' ||
+      normalized === 'nasirhussin12489@gmail.com'
+    ) {
       return {
         id: 1,
         uid: 'offline-super-admin',
+        username: 'Dilshad1345',
         email: normalized,
-        name: 'Nasir Hussain',
-        role: 'SUPER_ADMIN',
+        name: 'Dilshad (Super Admin)',
+        role: 'SUPER_ADMIN' as const,
         assignedClass: null,
-        status: 'ACTIVE',
-        passwordHash: hashPassword('admin123'),
-        passwordPlain: 'admin123',
+        status: 'ACTIVE' as const,
+        passwordHash: hashPassword('9934886605dilD@'),
+        passwordPlain: '9934886605dilD@',
       };
     }
 
     console.error('Database query failed in getUserByEmail:', error);
+    return null;
+  }
+}
+
+export async function getUserByUsernameOrEmail(identifier: string) {
+  try {
+    const clean = identifier.trim().toLowerCase();
+    const rows = await db
+      .select()
+      .from(users)
+      .where(
+        or(
+          sql`LOWER(${users.username}) = ${clean}`,
+          sql`LOWER(${users.email}) = ${clean}`
+        )
+      );
+    return rows[0] || null;
+  } catch (error) {
+    const clean = identifier.trim().toLowerCase();
+    if (
+      clean === 'dilshad1345' ||
+      clean === 'nasirhussin12489@gmail.com' ||
+      clean === 'nasirhussain12489@gmail.com'
+    ) {
+      return {
+        id: 1,
+        uid: 'offline-super-admin',
+        username: 'Dilshad1345',
+        email: 'nasirhussin12489@gmail.com',
+        name: 'Dilshad (Super Admin)',
+        role: 'SUPER_ADMIN' as const,
+        assignedClass: null,
+        status: 'ACTIVE' as const,
+        passwordHash: hashPassword('9934886605dilD@'),
+        passwordPlain: '9934886605dilD@',
+      };
+    }
+
+    console.error('Database query failed in getUserByUsernameOrEmail:', error);
     return null;
   }
 }
@@ -691,42 +679,46 @@ export async function ensureRequestedAdminCredentials() {
     const teacherPwHash = hashPassword('123456789teacher');
     const u1AdminPwHash = hashPassword('123456789admin');
 
-    // 1. Ensure both spellings of Super Admin email are active with password 9934886605dilD@
-    for (const [uidKey, emailVal] of [
-      ['superadmin-nasir-1', 'nasirhussin12489@gmail.com'],
-      ['superadmin-owner-uid', 'nasirhussain12489@gmail.com'],
-    ] as const) {
-      const existing = await db
-        .select()
-        .from(users)
-        .where(eq(users.email, emailVal));
-      if (existing.length > 0) {
-        await db
-          .update(users)
-          .set({
-            role: 'SUPER_ADMIN',
-            assignedClass: null,
-            status: 'ACTIVE',
-            passwordHash: existing[0].passwordHash || superAdminPwHash,
-            passwordPlain: existing[0].passwordPlain || '9934886605dilD@',
-            updatedAt: new Date(),
-          })
-          .where(eq(users.id, existing[0].id));
-      } else {
-        await db
-          .insert(users)
-          .values({
-            uid: uidKey,
-            email: emailVal,
-            name: 'Nasir Hussain (Super Admin)',
-            role: 'SUPER_ADMIN',
-            assignedClass: null,
-            status: 'ACTIVE',
-            passwordHash: superAdminPwHash,
-            passwordPlain: '9934886605dilD@',
-          })
-          .onConflictDoNothing();
-      }
+    // 1. Ensure Super Admin account with username Dilshad1345 and password 9934886605dilD@
+    const existingSuperAdmin = await db
+      .select()
+      .from(users)
+      .where(
+        or(
+          eq(users.username, 'Dilshad1345'),
+          eq(users.email, 'nasirhussin12489@gmail.com')
+        )
+      );
+
+    if (existingSuperAdmin.length > 0) {
+      await db
+        .update(users)
+        .set({
+          username: 'Dilshad1345',
+          name: 'Dilshad (Super Admin)',
+          role: 'SUPER_ADMIN',
+          assignedClass: null,
+          status: 'ACTIVE',
+          passwordHash: superAdminPwHash,
+          passwordPlain: '9934886605dilD@',
+          updatedAt: new Date(),
+        })
+        .where(eq(users.id, existingSuperAdmin[0].id));
+    } else {
+      await db
+        .insert(users)
+        .values({
+          uid: 'superadmin-dilshad-1',
+          username: 'Dilshad1345',
+          email: 'nasirhussin12489@gmail.com',
+          name: 'Dilshad (Super Admin)',
+          role: 'SUPER_ADMIN',
+          assignedClass: null,
+          status: 'ACTIVE',
+          passwordHash: superAdminPwHash,
+          passwordPlain: '9934886605dilD@',
+        })
+        .onConflictDoNothing();
     }
 
     // 1b. Ensure primary Teacher account (teacher@gmail.com) is active with full control except user management

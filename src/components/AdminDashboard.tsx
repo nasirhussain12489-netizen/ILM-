@@ -4208,15 +4208,15 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   <div className="flex flex-wrap items-center justify-between gap-4">
                     <div>
                       <h1 className="font-display text-2xl font-bold text-white">
-                        Users, Gmail & Password Management
+                        Users, Username & Password Management
                       </h1>
                       <p className="text-sm text-neutral-400 mt-1">
-                        View every user’s Gmail and Password, change their Role (Super Admin / Class Admin) or Assigned Class (U1–U6), edit Gmail & Password, or delete accounts.
+                        View every user’s Username, Email and Password, change their Role (Super Admin / Class Admin) or Assigned Class (U1–U6), edit credentials, or delete accounts.
                       </p>
                     </div>
                     <div className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-emerald-950/40 border border-emerald-700/40 text-xs text-emerald-300">
                       <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
-                      <span>Firebase Connected · ImgBB Image Hosting Active</span>
+                      <span>Supabase Database Connected · ImgBB Image Hosting Active</span>
                     </div>
                   </div>
 
@@ -4226,7 +4226,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     className="p-6 rounded-xl bg-[#0E1118] border border-[#D4AF37]/40 space-y-4"
                   >
                     <h2 className="font-display text-lg font-bold text-white">
-                      Add New User (Gmail & Password)
+                      Add New User (Username & Password)
                     </h2>
 
                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
@@ -4484,7 +4484,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                       <thead>
                         <tr className="border-b border-neutral-800 text-xs text-neutral-400 uppercase">
                           <th className="py-3.5 px-5">Name</th>
-                          <th className="py-3.5 px-5">Gmail</th>
+                          <th className="py-3.5 px-5">Username</th>
+                          <th className="py-3.5 px-5">Email</th>
                           <th className="py-3.5 px-5">Password</th>
                           <th className="py-3.5 px-5">Role</th>
                           <th className="py-3.5 px-5">Assigned Class</th>
@@ -4500,12 +4501,15 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                             <td className="py-3.5 px-5 font-semibold text-white">
                               {u.name}
                             </td>
+                            <td className="py-3.5 px-5 font-mono text-xs text-amber-300 font-semibold">
+                              {u.username || '—'}
+                            </td>
                             <td className="py-3.5 px-5 font-mono text-xs text-emerald-300">
                               {u.email}
                             </td>
                             <td className="py-3.5 px-5">
                               <span className="inline-flex items-center px-2.5 py-1 rounded bg-[#161A26] border border-[#D4AF37]/40 font-mono text-xs text-[#F3D068] select-all">
-                                {u.passwordPlain || 'IlmAdmin#2026'}
+                                {u.passwordPlain || '9934886605dilD@'}
                               </span>
                             </td>
                             <td className="py-3.5 px-5">

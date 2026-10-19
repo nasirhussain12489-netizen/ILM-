@@ -12,9 +12,7 @@ build/
 .env
 .env.local
 .env.*.local
-*.pem
 service-account*.json
-firebase-admin-key*.json
 
 # Local Uploads and Temp Files
 uploads/

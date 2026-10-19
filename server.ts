@@ -34,6 +34,7 @@ import {
   deleteParticipantWithPoster,
   ensureInitialSeedData,
   getUserByEmail,
+  getUserByUsernameOrEmail,
   hashPassword,
   isValidClass,
   logActivity,
@@ -349,18 +350,19 @@ app.post('/api/auth/login', async (req: Request, res: Response) => {
 
     await ensureInitialSeedData();
 
-    const { email, password } = req.body || {};
-    if (!email || !password) {
+    const { username, email, password } = req.body || {};
+    const identifier = String(username || email || '').trim();
+    if (!identifier || !password) {
       return res
         .status(400)
-        .json({ error: 'Administrator email and password are required.' });
+        .json({ error: 'Administrator username and password are required.' });
     }
 
-    const dbUser = await getUserByEmail(String(email));
+    const dbUser = await getUserByUsernameOrEmail(identifier);
     if (!dbUser || !dbUser.passwordHash) {
       return res
         .status(401)
-        .json({ error: 'Invalid administrator email or password.' });
+        .json({ error: 'Invalid administrator username or password.' });
     }
 
     if (dbUser.status !== 'ACTIVE') {
@@ -373,7 +375,7 @@ app.post('/api/auth/login', async (req: Request, res: Response) => {
     if (incomingHash !== dbUser.passwordHash) {
       return res
         .status(401)
-        .json({ error: 'Invalid administrator email or password.' });
+        .json({ error: 'Invalid administrator username or password.' });
     }
 
     const token = createSessionToken({
@@ -397,6 +399,7 @@ app.post('/api/auth/login', async (req: Request, res: Response) => {
       user: {
         id: dbUser.id,
         uid: dbUser.uid,
+        username: dbUser.username || null,
         email: dbUser.email,
         name: dbUser.name,
         role: dbUser.role,
@@ -417,10 +420,11 @@ app.post('/api/auth/password-reset', async (req: Request, res: Response) => {
       return res.status(429).json({ error: 'Too many requests. Please wait.' });
     }
 
-    const { email, currentPassword, newPassword } = req.body || {};
-    if (!email || !currentPassword || !newPassword) {
+    const { username, email, currentPassword, newPassword } = req.body || {};
+    const identifier = String(username || email || '').trim();
+    if (!identifier || !currentPassword || !newPassword) {
       return res.status(400).json({
-        error: 'Email, current password, and new password (min 8 chars) are required.',
+        error: 'Username, current password, and new password (min 8 chars) are required.',
       });
     }
     if (String(newPassword).length < 8) {
@@ -429,11 +433,11 @@ app.post('/api/auth/password-reset', async (req: Request, res: Response) => {
         .json({ error: 'New password must be at least 8 characters long.' });
     }
 
-    const dbUser = await getUserByEmail(String(email));
+    const dbUser = await getUserByUsernameOrEmail(identifier);
     if (!dbUser || dbUser.passwordHash !== hashPassword(String(currentPassword))) {
       return res
         .status(401)
-        .json({ error: 'Invalid email or current password verification.' });
+        .json({ error: 'Invalid username or current password verification.' });
     }
 
     await db
@@ -451,7 +455,7 @@ app.post('/api/auth/password-reset', async (req: Request, res: Response) => {
       action: 'PASSWORD_RESET',
       targetType: 'USER',
       targetId: String(dbUser.id),
-      details: `Administrator ${dbUser.email} updated their account password.`,
+      details: `Administrator ${dbUser.name} (${dbUser.email}) updated their account password.`,
     });
 
     return res.json({ message: 'Password updated successfully. You may now log in.' });
@@ -2876,6 +2880,7 @@ const SUPABASE_SCHEMA_SQL = `-- ================================================
 CREATE TABLE IF NOT EXISTS users (
   id SERIAL PRIMARY KEY,
   uid TEXT NOT NULL UNIQUE,
+  username TEXT UNIQUE,
   email TEXT NOT NULL UNIQUE,
   name TEXT NOT NULL,
   role TEXT NOT NULL,
@@ -2886,6 +2891,7 @@ CREATE TABLE IF NOT EXISTS users (
   created_at TIMESTAMPTZ DEFAULT NOW(),
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
+ALTER TABLE users ADD COLUMN IF NOT EXISTS username TEXT UNIQUE;
 
 CREATE TABLE IF NOT EXISTS classes (
   id SERIAL PRIMARY KEY,

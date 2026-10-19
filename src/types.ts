@@ -158,6 +158,7 @@ export interface AdminUser {
   assignedClass: ClassCode | null;
   status: 'ACTIVE' | 'DEACTIVATED';
   passwordPlain?: string | null;
+  username?: string | null;
   createdAt?: string;
   updatedAt?: string;
 }

@@ -1,6 +1,4 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { signOut } from 'firebase/auth';
-import { auth } from './lib/firebase.ts';
 import { AdminUser, PublicBootstrapData } from './types.ts';
 import { safeFetchJson, formatErrorMessage } from './lib/api.ts';
 import { PublicWebsite } from './components/PublicWebsite.tsx';
@@ -27,7 +25,7 @@ export default function App() {
   const [loadingPublic, setLoadingPublic] = useState(true);
   const [publicError, setPublicError] = useState<string | null>(null);
 
-  // Auth state stored in memory (per Cloud SQL + Firebase Auth security guidelines)
+  // Auth state stored in memory (per Supabase / PostgreSQL security guidelines)
   const [authToken, setAuthToken] = useState<string | null>(null);
   const [adminUser, setAdminUser] = useState<AdminUser | null>(null);
   const [showLoginModal, setShowLoginModal] = useState(false);
@@ -79,16 +77,11 @@ const loadPublicBootstrap = useCallback(async () => {
     setViewMode('DASHBOARD');
   };
 
-  const handleLogout = async () => {
+  const handleLogout = () => {
     try {
       sessionStorage.removeItem('ilm_admin_session_token');
     } catch {
       // ignore
-    }
-    try {
-      await signOut(auth);
-    } catch {
-      // Ignore if signed in via backend credentials token
     }
     setAuthToken(null);
     setAdminUser(null);
