@@ -30,8 +30,8 @@ export function hasSupabaseRuntimeConfig(): boolean {
 }
 
 export function getSupabaseClient(customUrl?: string, customKey?: string): SupabaseClient | null {
-  const url = customUrl || (typeof process !== 'undefined' ? process.env.SUPABASE_URL : '') || (typeof import.meta !== 'undefined' && (import.meta as any).env?.VITE_SUPABASE_URL) || '';
-  const key = customKey || (typeof process !== 'undefined' ? (process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY) : '') || (typeof import.meta !== 'undefined' && (import.meta as any).env?.VITE_SUPABASE_ANON_KEY) || '';
+  const url = customUrl || (typeof process !== 'undefined' ? process.env.SUPABASE_URL : '') || (typeof import.meta !== 'undefined' && (import.meta as any).env?.VITE_SUPABASE_URL) || 'https://gmgdqwcnbkxqfskfuncs.supabase.co';
+  const key = customKey || (typeof process !== 'undefined' ? (process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY) : '') || (typeof import.meta !== 'undefined' && (import.meta as any).env?.VITE_SUPABASE_ANON_KEY) || 'sb_publishable_diG86-3zLdM71WGxnn_Z4g_VE-msXQV';
 
   if (!url || !key) {
     return null;

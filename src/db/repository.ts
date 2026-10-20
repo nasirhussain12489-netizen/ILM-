@@ -1069,27 +1069,51 @@ export async function ensureRequestedAdminCredentials() {
     }
 
     // 6. Ensure default ImgBB API key is initialized in platformSettings if not set
-    const existingImgbb = await db
-      .select()
-      .from(platformSettings)
-      .where(eq(platformSettings.settingKey, 'imgbbApiKey'))
-      .limit(1);
-    if (!existingImgbb.length || !existingImgbb[0].settingValue?.trim()) {
-      await db
-        .insert(platformSettings)
-        .values({
-          settingKey: 'imgbbApiKey',
-          settingValue: '9551c6c91a49c0c4b17819b26554d812',
+    await db
+      .insert(platformSettings)
+      .values({
+        settingKey: 'imgbbApiKey',
+        settingValue: 'a75a4b9ad34361c1648815fc4edd5a87',
+        updatedAt: new Date(),
+      })
+      .onConflictDoUpdate({
+        target: platformSettings.settingKey,
+        set: {
+          settingValue: 'a75a4b9ad34361c1648815fc4edd5a87',
           updatedAt: new Date(),
-        })
-        .onConflictDoUpdate({
-          target: platformSettings.settingKey,
-          set: {
-            settingValue: '9551c6c91a49c0c4b17819b26554d812',
-            updatedAt: new Date(),
-          },
-        });
-    }
+        },
+      });
+
+    // 7. Ensure user Supabase credentials are saved in platformSettings
+    await db
+      .insert(platformSettings)
+      .values({
+        settingKey: 'supabaseUrl',
+        settingValue: 'https://gmgdqwcnbkxqfskfuncs.supabase.co',
+        updatedAt: new Date(),
+      })
+      .onConflictDoUpdate({
+        target: platformSettings.settingKey,
+        set: {
+          settingValue: 'https://gmgdqwcnbkxqfskfuncs.supabase.co',
+          updatedAt: new Date(),
+        },
+      });
+
+    await db
+      .insert(platformSettings)
+      .values({
+        settingKey: 'supabaseAnonKey',
+        settingValue: 'sb_publishable_diG86-3zLdM71WGxnn_Z4g_VE-msXQV',
+        updatedAt: new Date(),
+      })
+      .onConflictDoUpdate({
+        target: platformSettings.settingKey,
+        set: {
+          settingValue: 'sb_publishable_diG86-3zLdM71WGxnn_Z4g_VE-msXQV',
+          updatedAt: new Date(),
+        },
+      });
 
     credentialsSynced = true;
   } catch (error) {

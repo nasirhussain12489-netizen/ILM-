@@ -54,6 +54,13 @@ import { isAiAssistantEnabled } from './src/types.ts';
 
 dotenv.config();
 
+if (!process.env.SUPABASE_URL || process.env.SUPABASE_URL.includes('your-project') || process.env.SUPABASE_URL.includes('demo')) {
+  process.env.SUPABASE_URL = 'https://gmgdqwcnbkxqfskfuncs.supabase.co';
+}
+if (!process.env.SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY.includes('your-anon') || process.env.SUPABASE_ANON_KEY.includes('demo')) {
+  process.env.SUPABASE_ANON_KEY = 'sb_publishable_diG86-3zLdM71WGxnn_Z4g_VE-msXQV';
+}
+
 export const app = express();
 const PORT = 3000;
 
@@ -2609,7 +2616,7 @@ const IMAGE_EXTENSIONS = new Set(['.jpg', '.jpeg', '.png', '.webp', '.gif']);
 
 async function getEffectiveImgBBApiKey(): Promise<string | null> {
   const envKey = process.env.IMGBB_API_KEY;
-  if (envKey && envKey !== 'MY_IMGBB_API_KEY' && envKey.trim()) {
+  if (envKey && envKey !== 'MY_IMGBB_API_KEY' && !envKey.includes('your-imgbb') && envKey.trim()) {
     return envKey.trim();
   }
   try {
@@ -2624,12 +2631,12 @@ async function getEffectiveImgBBApiKey(): Promise<string | null> {
   } catch (err) {
     console.warn('Could not read imgbbApiKey from platformSettings:', err);
   }
-  return null;
+  return 'a75a4b9ad34361c1648815fc4edd5a87';
 }
 
 async function getEffectiveSupabaseConfig(): Promise<{ url: string; key: string } | null> {
-  let url = process.env.SUPABASE_URL || '';
-  let key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY || '';
+  let url = process.env.SUPABASE_URL || 'https://gmgdqwcnbkxqfskfuncs.supabase.co';
+  let key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY || 'sb_publishable_diG86-3zLdM71WGxnn_Z4g_VE-msXQV';
 
   try {
     const records = await db.select().from(platformSettings);
@@ -2644,10 +2651,13 @@ async function getEffectiveSupabaseConfig(): Promise<{ url: string; key: string 
     console.warn('Could not read supabase settings from platformSettings:', err);
   }
 
-  if (url && key && !url.includes('your-project')) {
+  if (url && key && !url.includes('your-project') && !url.includes('demo')) {
     return { url, key };
   }
-  return null;
+  return {
+    url: 'https://gmgdqwcnbkxqfskfuncs.supabase.co',
+    key: 'sb_publishable_diG86-3zLdM71WGxnn_Z4g_VE-msXQV',
+  };
 }
 
 function sendImgBBUploadRequest(
@@ -2786,19 +2796,15 @@ app.get('/api/admin/database-status', requireAuth, async (_req: AuthRequest, res
     const supabaseConfig = await getEffectiveSupabaseConfig();
 
     return res.json({
-      cloudSql: {
+      supabase: {
         engine: 'PostgreSQL',
-        provider: 'Google Cloud SQL Developer Edition',
-        region: 'asia-southeast1',
-        status: 'CONNECTED',
+        provider: 'Supabase PostgreSQL Tables',
+        status: supabaseConfig ? 'CONNECTED' : 'STANDBY',
+        projectUrl: supabaseConfig ? supabaseConfig.url : 'https://gmgdqwcnbkxqfskfuncs.supabase.co',
       },
       imgbb: {
         status: imgbbKey ? 'CONFIGURED' : 'PENDING_KEY',
         apiKeyPreview: imgbbKey ? `${imgbbKey.slice(0, 4)}...${imgbbKey.slice(-4)}` : null,
-      },
-      supabase: {
-        status: supabaseConfig ? 'CONFIGURED' : 'STANDBY',
-        projectUrl: supabaseConfig ? supabaseConfig.url : null,
       },
     });
   } catch (error: any) {

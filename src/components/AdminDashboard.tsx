@@ -4762,14 +4762,14 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                       <div className="flex items-center justify-between">
                         <div>
                           <h4 className="text-sm font-semibold text-[#F3D068] flex items-center gap-2">
-                            <span>☁️</span> Cloud Database & Image Storage Configuration
+                            <span>⚡</span> Supabase Database & Image Storage Configuration
                           </h4>
                           <p className="text-xs text-neutral-400 mt-0.5">
-                            Manage Supabase, ImgBB permanent image hosting, and Cloud SQL PostgreSQL.
+                            Manage Supabase PostgreSQL database tables and ImgBB permanent image hosting.
                           </p>
                         </div>
                         <span className="px-2.5 py-1 rounded-full text-[10px] font-semibold bg-emerald-950/80 border border-emerald-600/50 text-emerald-300">
-                          PostgreSQL Active (asia-southeast1)
+                          Supabase PostgreSQL Active
                         </span>
                       </div>
 
