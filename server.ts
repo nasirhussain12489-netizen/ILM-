@@ -6,7 +6,6 @@ import crypto from 'crypto';
 import https from 'https';
 import * as dotenv from 'dotenv';
 import { and, asc, desc, eq } from 'drizzle-orm';
-import { createServer as createViteServer } from 'vite';
 import { db } from './src/db/index.ts';
 import {
   activityLogs,
@@ -348,7 +347,8 @@ app.post('/api/public/ai/chat', async (req: Request, res: Response) => {
 // ============================================================================
 app.post('/api/auth/login', async (req: Request, res: Response) => {
   try {
-    const ip = req.ip || 'unknown';
+    const rawIp = req.headers['x-forwarded-for'] || (req.socket as any)?.remoteAddress || '127.0.0.1';
+    const ip = Array.isArray(rawIp) ? rawIp[0] : String(rawIp).split(',')[0].trim();
     if (!checkRateLimit(ip)) {
       return res.status(429).json({
         error: 'Too many login attempts. Please wait a minute before trying again.',
@@ -422,7 +422,8 @@ app.post('/api/auth/login', async (req: Request, res: Response) => {
 
 app.post('/api/auth/password-reset', async (req: Request, res: Response) => {
   try {
-    const ip = req.ip || 'unknown';
+    const rawIp = req.headers['x-forwarded-for'] || (req.socket as any)?.remoteAddress || '127.0.0.1';
+    const ip = Array.isArray(rawIp) ? rawIp[0] : String(rawIp).split(',')[0].trim();
     if (!checkRateLimit(ip)) {
       return res.status(429).json({ error: 'Too many requests. Please wait.' });
     }
@@ -3265,18 +3266,21 @@ app.post(
 // VITE DEV MIDDLEWARE OR PRODUCTION STATIC ASSETS
 // ============================================================================
 async function startServer() {
-  if (process.env.NODE_ENV !== 'production') {
+  if (process.env.NODE_ENV !== 'production' && !process.env.VERCEL) {
+    const { createServer: createViteServer } = await import('vite');
     const vite = await createViteServer({
       server: { middlewareMode: true, hmr: false },
       appType: 'spa',
     });
     app.use(vite.middlewares);
-  } else {
+  } else if (!process.env.VERCEL) {
     const distPath = path.join(process.cwd(), 'dist');
-    app.use(express.static(distPath));
-    app.get('*', (_req, res) => {
-      res.sendFile(path.join(distPath, 'index.html'));
-    });
+    if (fs.existsSync(distPath)) {
+      app.use(express.static(distPath));
+      app.get('*', (_req, res) => {
+        res.sendFile(path.join(distPath, 'index.html'));
+      });
+    }
   }
 
   const server = app.listen(PORT, '0.0.0.0', () => {

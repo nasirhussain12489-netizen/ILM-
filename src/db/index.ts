@@ -35,7 +35,7 @@ export const createPool = () => {
         connectionString,
         ssl: requiresSsl ? { rejectUnauthorized: false } : undefined,
         max: 10,
-        connectionTimeoutMillis: 15000,
+        connectionTimeoutMillis: 4000,
       });
     } else {
       const host = process.env.SQL_HOST || 'localhost';
@@ -58,7 +58,7 @@ export const createPool = () => {
         port: process.env.SQL_PORT ? Number(process.env.SQL_PORT) : 5432,
         ssl: sslConfig,
         max: 10,
-        connectionTimeoutMillis: 15000,
+        connectionTimeoutMillis: 4000,
       });
     }
 
