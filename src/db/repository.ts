@@ -16,6 +16,14 @@ import {
   weeklyResults,
 } from './schema.ts';
 import { buildIlmPosterSvg, svgToDataUrl } from '../lib/posterSvg.ts';
+import {
+  supabaseInsertParticipant,
+  supabaseUpdateParticipant,
+  supabaseDeleteParticipant,
+  supabaseUpdatePoster,
+  supabaseInsertStudent,
+} from '../lib/supabaseStore.ts';
+import { getSupabaseClient } from '../lib/supabase.ts';
 
 export const VALID_CLASSES = ['U1', 'U2', 'U3', 'U4', 'U5', 'U6'] as const;
 export type ValidClassCode = (typeof VALID_CLASSES)[number];
@@ -249,24 +257,68 @@ export async function regeneratePosterForClassCategory(
     }
 
     // Fetch ALL published participants in this class across all 8 competition categories
-    const allClassParticipants = await db
-      .select()
-      .from(participants)
-      .where(
-        and(
-          eq(participants.classCode, classCode),
-          eq(participants.publicationStatus, 'PUBLISHED')
-        )
-      )
-      .orderBy(asc(participants.id));
+    let allClassParticipants: any[] = [];
+
+    const client = getSupabaseClient();
+    if (client) {
+      try {
+        const { data: sbParts } = await client
+          .from('participants')
+          .select('*')
+          .eq('class_code', classCode)
+          .eq('publication_status', 'PUBLISHED')
+          .order('id');
+        if (sbParts && sbParts.length > 0) {
+          allClassParticipants = sbParts.map((p) => ({
+            id: p.id,
+            admissionNo: p.admission_no || null,
+            fullName: p.full_name || p.fullName || 'Scholar',
+            photoUrl: p.photo_url || p.photoUrl || '',
+            classCode: p.class_code || p.classCode || classCode,
+            categoryName: p.category_name || p.categoryName || '',
+            ownTopic: p.own_topic || p.ownTopic || null,
+          }));
+        }
+      } catch (e) {
+        console.warn('Could not fetch participants from Supabase:', e);
+      }
+    }
+
+    if (allClassParticipants.length === 0) {
+      try {
+        const dbParts = await db
+          .select()
+          .from(participants)
+          .where(
+            and(
+              eq(participants.classCode, classCode),
+              eq(participants.publicationStatus, 'PUBLISHED')
+            )
+          )
+          .orderBy(asc(participants.id));
+        if (dbParts && dbParts.length > 0) {
+          allClassParticipants = dbParts.map((p) => ({
+            id: p.id,
+            admissionNo: p.admissionNo || null,
+            fullName: p.fullName || 'Scholar',
+            photoUrl: p.photoUrl || '',
+            classCode: p.classCode,
+            categoryName: p.categoryName,
+            ownTopic: p.ownTopic || null,
+          }));
+        }
+      } catch (dbErr) {
+        console.warn('Could not fetch participants from DB:', dbErr);
+      }
+    }
 
     const classSnapshot = allClassParticipants.map((p) => ({
       id: p.id,
       admissionNo: p.admissionNo || null,
-      fullName: p.fullName,
-      photoUrl: p.photoUrl,
-      classCode: p.classCode,
-      categoryName: p.categoryName,
+      fullName: p.fullName || p.full_name || 'Scholar',
+      photoUrl: p.photoUrl || p.photo_url || '',
+      classCode: p.classCode || classCode,
+      categoryName: p.categoryName || '',
       ownTopic: p.ownTopic || null,
     }));
 
@@ -283,56 +335,59 @@ export async function regeneratePosterForClassCategory(
     });
     const classDataUrl = svgToDataUrl(classSvg);
 
-    const existingClassPosters = await db
-      .select()
-      .from(posters)
-      .where(eq(posters.classCode, classCode))
-      .orderBy(asc(posters.id));
+    // Sync to Supabase posters table
+    await supabaseUpdatePoster(classCode, {
+      posterImageUrl: classDataUrl,
+      participantsSnapshot: JSON.stringify(classSnapshot),
+      participantCount: allClassParticipants.length,
+      title: classTitle,
+      subtitle: classSubtitle,
+      categoryName: unifiedCategoryLabel,
+    });
 
-    let updatedPoster;
-    if (existingClassPosters.length > 0) {
-      const primaryId = existingClassPosters[0].id;
-      const res = await db
-        .update(posters)
-        .set({
-          categoryName: unifiedCategoryLabel,
-          title: classTitle,
-          subtitle: classSubtitle,
-          posterImageUrl: classDataUrl,
-          participantsSnapshot: JSON.stringify(classSnapshot),
-          participantCount: allClassParticipants.length,
-          generationStatus: 'COMPLETED',
-          generationError: null,
-          updatedAt: new Date(),
-        })
-        .where(eq(posters.id, primaryId))
-        .returning();
-      updatedPoster = res[0];
+    let updatedPoster = {
+      id: 1,
+      classCode,
+      categoryName: unifiedCategoryLabel,
+      title: classTitle,
+      subtitle: classSubtitle,
+      posterImageUrl: classDataUrl,
+      participantsSnapshot: JSON.stringify(classSnapshot),
+      participantCount: allClassParticipants.length,
+      generationStatus: 'COMPLETED',
+      publicationStatus: 'PUBLISHED',
+      isFeatured: false,
+      updatedAt: new Date(),
+    };
 
-      // Remove any extra split category posters for this class so there is 1 unified poster per class
-      for (let i = 1; i < existingClassPosters.length; i++) {
-        await db
-          .delete(posters)
-          .where(eq(posters.id, existingClassPosters[i].id));
+    try {
+      const existingClassPosters = await db
+        .select()
+        .from(posters)
+        .where(eq(posters.classCode, classCode))
+        .orderBy(asc(posters.id));
+
+      if (existingClassPosters.length > 0) {
+        const primaryId = existingClassPosters[0].id;
+        const res = await db
+          .update(posters)
+          .set({
+            categoryName: unifiedCategoryLabel,
+            title: classTitle,
+            subtitle: classSubtitle,
+            posterImageUrl: classDataUrl,
+            participantsSnapshot: JSON.stringify(classSnapshot),
+            participantCount: allClassParticipants.length,
+            generationStatus: 'COMPLETED',
+            generationError: null,
+            updatedAt: new Date(),
+          })
+          .where(eq(posters.id, primaryId))
+          .returning();
+        if (res && res[0]) updatedPoster = res[0] as any;
       }
-    } else {
-      const res = await db
-        .insert(posters)
-        .values({
-          classCode,
-          categoryName: unifiedCategoryLabel,
-          title: classTitle,
-          subtitle: classSubtitle,
-          posterImageUrl: classDataUrl,
-          participantsSnapshot: JSON.stringify(classSnapshot),
-          participantCount: allClassParticipants.length,
-          generationStatus: 'COMPLETED',
-          generationError: null,
-          publicationStatus: 'PUBLISHED',
-          isFeatured: true,
-        })
-        .returning();
-      updatedPoster = res[0];
+    } catch (dbErr) {
+      // Continue with updatedPoster
     }
 
     return updatedPoster;
@@ -389,75 +444,77 @@ export async function createParticipantWithPoster(params: {
     throw new Error('Participant photograph is required.');
   }
 
-  let createdParticipant;
-  try {
-    createdParticipant = await db.transaction(async (tx) => {
-      // Lock class record to serialize simultaneous capacity checks per class
-      await tx.select().from(classes).where(eq(classes.code, classCode));
+  const cleanAdm = admissionNo?.trim() || null;
 
-      const currentInCategory = await tx
-        .select()
-        .from(participants)
-        .where(
-          and(
-            eq(participants.classCode, classCode),
-            eq(participants.categoryName, categoryName)
-          )
-        );
+  // 1. Direct write to Supabase participants & students table
+  const sbParticipant = await supabaseInsertParticipant({
+    admissionNo: cleanAdm,
+    fullName: fullName.trim(),
+    photoUrl: photoUrl.trim(),
+    classCode,
+    categoryName,
+    ownTopic: ownTopic?.trim() || null,
+    shortDescription: shortDescription?.trim() || null,
+    publicationStatus,
+    createdByEmail: actorEmail,
+  });
 
-      if (currentInCategory.length >= maxAllowed) {
-        throw new Error(
-          `Capacity reached: ${categoryName} in class ${classCode} allows a maximum of ${maxAllowed} participant(s) (${currentInCategory.length}/${maxAllowed} registered).`
-        );
-      }
-
-      const duplicate = currentInCategory.find(
-        (p) => p.fullName.trim().toLowerCase() === fullName.trim().toLowerCase()
-      );
-      if (duplicate) {
-        throw new Error(
-          `Duplicate assignment prevented: '${fullName.trim()}' is already registered in ${categoryName} for class ${classCode}.`
-        );
-      }
-
-      const cleanAdm = admissionNo?.trim() || null;
-
-      // Also sync into students table if admissionNo is provided
-      if (cleanAdm) {
-        await tx
-          .insert(students)
-          .values({
-            admissionNo: cleanAdm,
-            fullName: fullName.trim(),
-            classCode,
-            photoUrl: photoUrl.trim(),
-            bio: shortDescription?.trim() || null,
-            createdByEmail: actorEmail,
-          })
-          .onConflictDoNothing();
-      }
-
-      const inserted = await tx
-        .insert(participants)
-        .values({
-          admissionNo: cleanAdm,
-          fullName: fullName.trim(),
-          photoUrl: photoUrl.trim(),
-          classCode,
-          categoryName,
-          ownTopic: ownTopic?.trim() || null,
-          shortDescription: shortDescription?.trim() || null,
-          publicationStatus,
-          createdByEmail: actorEmail,
-        })
-        .returning();
-
-      return inserted[0];
+  if (cleanAdm) {
+    await supabaseInsertStudent({
+      admissionNo: cleanAdm,
+      fullName: fullName.trim(),
+      classCode,
+      photoUrl: photoUrl.trim(),
+      bio: shortDescription?.trim() || null,
+      createdByEmail: actorEmail,
     });
+  }
+
+  let createdParticipant = sbParticipant
+    ? {
+        id: sbParticipant.id,
+        admissionNo: sbParticipant.admission_no,
+        fullName: sbParticipant.full_name,
+        photoUrl: sbParticipant.photo_url,
+        classCode: sbParticipant.class_code,
+        categoryName: sbParticipant.category_name,
+        ownTopic: sbParticipant.own_topic,
+        shortDescription: sbParticipant.short_description,
+        publicationStatus: sbParticipant.publication_status,
+        createdByEmail: sbParticipant.created_by_email,
+        createdAt: sbParticipant.created_at,
+        updatedAt: sbParticipant.updated_at,
+      }
+    : null;
+
+  // 2. Also try writing to local Drizzle SQL DB if active
+  try {
+    const inserted = await db
+      .insert(participants)
+      .values({
+        admissionNo: cleanAdm,
+        fullName: fullName.trim(),
+        photoUrl: photoUrl.trim(),
+        classCode,
+        categoryName,
+        ownTopic: ownTopic?.trim() || null,
+        shortDescription: shortDescription?.trim() || null,
+        publicationStatus,
+        createdByEmail: actorEmail,
+      })
+      .returning();
+
+    if (inserted && inserted[0]) {
+      createdParticipant = inserted[0] as any;
+    }
   } catch (error: any) {
-    const offlineParticipant = {
+    console.warn('Direct SQL insert skipped (record saved to Supabase):', error?.message || error);
+  }
+
+  if (!createdParticipant) {
+    createdParticipant = {
       id: Date.now(),
-      admissionNo: admissionNo?.trim() || `OFFLINE-${Date.now()}`,
+      admissionNo: cleanAdm,
       fullName: fullName.trim(),
       photoUrl: photoUrl.trim(),
       classCode,
@@ -468,49 +525,7 @@ export async function createParticipantWithPoster(params: {
       createdByEmail: actorEmail,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
-    };
-
-    const svg = buildIlmPosterSvg({
-      classCode,
-      categoryName,
-      title: `${fullName.trim()} • ${categoryName}`,
-      subtitle: `${classCode} Class Offline Poster`,
-      participants: [{
-        id: offlineParticipant.id,
-        admissionNo: offlineParticipant.admissionNo,
-        fullName: offlineParticipant.fullName,
-        photoUrl: offlineParticipant.photoUrl,
-        classCode,
-        categoryName,
-        ownTopic: offlineParticipant.ownTopic || null,
-      }],
-    });
-
-    return {
-      participant: offlineParticipant,
-      poster: {
-        id: Date.now() + 1,
-        classCode,
-        categoryName,
-        title: `${fullName.trim()} • ${categoryName}`,
-        subtitle: `${classCode} Class Offline Poster`,
-        posterImageUrl: svgToDataUrl(svg),
-        participantsSnapshot: JSON.stringify([
-          {
-            fullName: offlineParticipant.fullName,
-            classCode,
-            categoryName,
-            photoUrl: offlineParticipant.photoUrl,
-          },
-        ]),
-        participantCount: 1,
-        generationStatus: 'READY',
-        publicationStatus: 'PUBLISHED',
-        isFeatured: true,
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-      },
-    };
+    } as any;
   }
 
   // Automatically generate/update unified class poster

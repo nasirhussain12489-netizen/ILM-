@@ -77,7 +77,14 @@ function renderPortraitSlot(params: {
   const clipId = `clip-${uidPrefix}-${idKey}`;
   const rx = Math.round(w * 0.16);
 
-  if (!person || !person.photoUrl) {
+  const rawName = (person?.fullName || (person as any)?.full_name || (person as any)?.studentName || (person as any)?.student_name || (person as any)?.name || '').trim();
+  const rawPhoto = (person?.photoUrl || (person as any)?.photo_url || '').trim();
+  const rawCategory = (person?.categoryName || (person as any)?.category_name || (person as any)?.category || '').trim();
+  const rawTopic = (person?.ownTopic || (person as any)?.own_topic || '').trim();
+
+  const hasPerson = Boolean(rawName || rawPhoto);
+
+  if (!hasPerson) {
     return `
       <g transform="translate(${x}, ${y})">
         <rect x="0" y="0" width="${w}" height="${h}" rx="${rx}" fill="#FFFFFF" fill-opacity="0.55" stroke="#E5C1BD" stroke-width="1.5" stroke-dasharray="6 4" />
@@ -89,11 +96,14 @@ function renderPortraitSlot(params: {
     `;
   }
 
-  const safePhoto = escapeXml(person.photoUrl);
+  const safePhoto = escapeXml(rawPhoto || '/assets/images/scholar_portrait_ayesha_1791787508872.jpg');
   const displayName = escapeXml(
-    truncateText(person.fullName, w >= 180 ? 22 : w >= 115 ? 16 : 13)
+    truncateText(rawName || placeholderRole, w >= 180 ? 22 : w >= 115 ? 16 : 13)
   );
-  const namePillW = Math.max(w + 18, Math.min(w + 38, person.fullName.length * 7.8 + 20));
+  const displayBadge = escapeXml(
+    truncateText(rawTopic || rawCategory || placeholderRole, w >= 180 ? 20 : 14)
+  );
+  const namePillW = Math.max(w + 18, Math.min(w + 38, displayName.length * 7.8 + 20));
   const namePillX = Math.round((w - namePillW) / 2);
   const nameFontSize = w >= 180 ? 15 : w >= 115 ? 12 : 10.5;
   const pillH = w >= 180 ? 28 : 23;
@@ -119,6 +129,15 @@ function renderPortraitSlot(params: {
         <!-- Participant Name Badge -->
         <rect x="${namePillX}" y="${h - Math.round(pillH * 0.42)}" width="${namePillW}" height="${pillH}" rx="${Math.round(pillH / 2)}" fill="#FFFFFF" fill-opacity="0.96" stroke="#C58B76" stroke-width="1.5" />
         <text x="${w / 2}" y="${h - Math.round(pillH * 0.42) + Math.round(pillH * 0.68)}" text-anchor="middle" fill="#111827" font-family="'Plus Jakarta Sans', sans-serif" font-size="${nameFontSize}" font-weight="800">${displayName}</text>
+        ${
+          displayBadge && displayBadge !== displayName
+            ? `
+          <!-- Category / Role Tag Pill -->
+          <rect x="${Math.round((w - 90) / 2)}" y="${-10}" width="90" height="18" rx="9" fill="#1E293B" fill-opacity="0.92" stroke="#D4AF37" stroke-width="1" />
+          <text x="${w / 2}" y="${2}" text-anchor="middle" fill="#FDE047" font-family="'Plus Jakarta Sans', sans-serif" font-size="9.5" font-weight="700">${displayBadge}</text>
+        `
+            : ''
+        }
       `
           : ''
       }
@@ -141,9 +160,18 @@ export function buildIlmPosterSvg(params: {
   const uidPrefix = String(classCode || 'cls').replace(/[^a-zA-Z0-9]/g, '');
 
   const byCat = (cat: string) =>
-    participants.filter(
-      (p) => p.categoryName.trim().toLowerCase() === cat.trim().toLowerCase()
-    );
+    participants.filter((p: any) => {
+      const rawCat = (p.categoryName || p.category_name || p.category || '').trim().toLowerCase();
+      const target = cat.trim().toLowerCase();
+      if (rawCat === target) return true;
+      if (target === 'speech' && (rawCat.includes('speech') || rawCat.includes('speaker'))) return true;
+      if (target === 'naat' && (rawCat.includes('naat') || rawCat.includes('singer'))) return true;
+      if (target === 'evolution' && (rawCat.includes('evolution') || rawCat.includes('evaluat'))) return true;
+      if (target === 'table topic' && (rawCat.includes('table') || rawCat.includes('topic'))) return true;
+      if (target === 'qirat' && (rawCat.includes('qirat') || rawCat.includes('qirath') || rawCat.includes('quran'))) return true;
+      if (target === 'aah counter' && (rawCat.includes('aah') || rawCat.includes('ah'))) return true;
+      return false;
+    });
 
   const marshals = byCat('Marshal');
   const qirats = byCat('Qirat');

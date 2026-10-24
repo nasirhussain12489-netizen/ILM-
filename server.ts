@@ -49,6 +49,7 @@ import {
 } from './src/middleware/auth.ts';
 import { createFallbackBootstrapData } from './src/lib/bootstrap.ts';
 import { getSupabaseClient, testSupabaseConnection } from './src/lib/supabase.ts';
+import * as supabaseStore from './src/lib/supabaseStore.ts';
 import { isAiAssistantEnabled } from './src/types.ts';
 
 dotenv.config();

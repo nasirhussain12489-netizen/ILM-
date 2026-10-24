@@ -97,21 +97,33 @@ export const PosterStageCard: React.FC<PosterStageCardProps> = ({
   );
 
   const parsedParticipants = useMemo(() => {
-    if (liveParticipants !== undefined) {
+    if (liveParticipants !== undefined && Array.isArray(liveParticipants)) {
       return liveParticipants
-        .filter((p) => p.classCode === poster.classCode)
-        .map((p) => ({
+        .filter((p: any) => (p.classCode || p.class_code) === poster.classCode)
+        .map((p: any) => ({
           id: p.id,
-          admissionNo: p.admissionNo || null,
-          fullName: p.fullName,
-          photoUrl: p.photoUrl,
-          classCode: p.classCode,
-          categoryName: p.categoryName,
-          ownTopic: p.ownTopic || null,
+          admissionNo: p.admissionNo || p.admission_no || null,
+          fullName: p.fullName || p.full_name || p.studentName || p.student_name || p.name || 'Scholar',
+          photoUrl: p.photoUrl || p.photo_url || '',
+          classCode: p.classCode || p.class_code || poster.classCode,
+          categoryName: p.categoryName || p.category_name || p.category || '',
+          ownTopic: p.ownTopic || p.own_topic || null,
         }));
     }
     try {
-      return JSON.parse(poster.participantsSnapshot || '[]');
+      const raw = JSON.parse(poster.participantsSnapshot || '[]');
+      if (Array.isArray(raw)) {
+        return raw.map((p: any) => ({
+          id: p.id,
+          admissionNo: p.admissionNo || p.admission_no || null,
+          fullName: p.fullName || p.full_name || p.studentName || p.student_name || p.name || 'Scholar',
+          photoUrl: p.photoUrl || p.photo_url || '',
+          classCode: p.classCode || p.class_code || poster.classCode,
+          categoryName: p.categoryName || p.category_name || p.category || '',
+          ownTopic: p.ownTopic || p.own_topic || null,
+        }));
+      }
+      return [];
     } catch {
       return [];
     }
